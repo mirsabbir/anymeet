@@ -1,4 +1,4 @@
-# Kothalipi: Windows
+# AnyMeet: Windows
 
 Works like the macOS app, from an icon in the taskbar's notification area.
 
@@ -26,7 +26,7 @@ WebView2 ships with Windows 11.
 
 ## Run
 
-- **From a release:** download [Kothalipi-Windows-x64.zip](https://github.com/mirsabbir/kothalipi/releases/latest/download/Kothalipi-Windows-x64.zip), unzip, run `Kothalipi.exe`. The app isn't code-signed yet, so SmartScreen asks: choose "More info → Run anyway".
+- **From a release:** download [AnyMeet-Windows-x64.zip](https://github.com/mirsabbir/anymeet/releases/latest/download/AnyMeet-Windows-x64.zip), unzip, run `AnyMeet.exe`. The app isn't code-signed yet, so SmartScreen asks: choose "More info → Run anyway".
 - **From source:** clone the repo, then
   ```powershell
   cd ui; npm ci; npm run build; cd ..\recorder-windows; dotnet run -c Release
@@ -34,14 +34,14 @@ WebView2 ships with Windows 11.
 
 The app looks for the transcriber (a clone of this repo's `transcriber\` folder) in this order:
 
-1. the `KOTHALIPI_TRANSCRIBER` environment variable
+1. the `ANYMEET_TRANSCRIBER` environment variable
 2. the path baked in at build time
 3. a `transcriber\` folder above the exe
 
 When running from the zip, set the first one:
 
 ```powershell
-setx KOTHALIPI_TRANSCRIBER "C:\path\to\kothalipi\transcriber"
+setx ANYMEET_TRANSCRIBER "C:\path\to\anymeet\transcriber"
 ```
 
 ## Status

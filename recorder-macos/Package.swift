@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Kothalipi",
+    name: "AnyMeet",
     platforms: [.macOS("15.0")],  // SCRecordingOutput and microphone capture in ScreenCaptureKit
-    targets: [.executableTarget(name: "Kothalipi", path: "Sources")]
+    targets: [.executableTarget(name: "AnyMeet", path: "Sources")]
 )

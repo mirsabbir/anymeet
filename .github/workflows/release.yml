@@ -26,15 +26,15 @@ jobs:
       - name: Make the DMG
         run: |
           mkdir dmg
-          cp -R "recorder-macos/build/Kothalipi.app" dmg/
+          cp -R "recorder-macos/build/AnyMeet.app" dmg/
           ln -s /Applications dmg/Applications
-          hdiutil create -volname "Kothalipi" -srcfolder dmg -ov -format UDZO Kothalipi-macOS.dmg
-          codesign -dv "dmg/Kothalipi.app" 2>&1 | grep -E "Identifier|Signature|Authority" || true
+          hdiutil create -volname "AnyMeet" -srcfolder dmg -ov -format UDZO AnyMeet-macOS.dmg
+          codesign -dv "dmg/AnyMeet.app" 2>&1 | grep -E "Identifier|Signature|Authority" || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: Kothalipi-macOS.dmg
+          path: AnyMeet-macOS.dmg
 
   windows:
     runs-on: windows-latest
@@ -59,11 +59,11 @@ jobs:
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           dotnet publish recorder-windows -c Release -o publish -p:Version=$version
           if (-not (Test-Path publish/ui/index.html)) { throw "ui/index.html missing from the build" }
-          Compress-Archive -Path publish/* -DestinationPath Kothalipi-Windows-x64.zip
+          Compress-Archive -Path publish/* -DestinationPath AnyMeet-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: Kothalipi-Windows-x64.zip
+          path: AnyMeet-Windows-x64.zip
 
   release:
     needs: [macos, windows]
@@ -75,4 +75,4 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" Kothalipi-* --repo "$GITHUB_REPOSITORY" --title "Kothalipi $GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" AnyMeet-* --repo "$GITHUB_REPOSITORY" --title "AnyMeet $GITHUB_REF_NAME" --generate-notes

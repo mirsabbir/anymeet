@@ -1,6 +1,6 @@
 using System.Drawing.Drawing2D;
 
-namespace Kothalipi;
+namespace AnyMeet;
 
 /// <summary>
 /// Notification-area (system tray) app. Left click starts or stops a recording;
@@ -119,7 +119,7 @@ sealed class TrayApp : ApplicationContext
             State.Idle when !TranscriptionRunner.AnyRunning => idleIcon,
             _ => busyIcon,
         };
-        var text = state == State.Recording ? $"Recording {Clock(DateTime.Now - startedAt)} · click to stop" : $"Kothalipi · {lastMessage}";
+        var text = state == State.Recording ? $"Recording {Clock(DateTime.Now - startedAt)} · click to stop" : $"AnyMeet · {lastMessage}";
         tray.Text = text.Length > 127 ? text[..127] : text;  // Windows limit
     }
 
@@ -134,7 +134,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add("Meetings…", null, (_, _) => WebWindow.ShowMeetings(folder != null ? Path.GetFileName(folder) : null));
         menu.Items.Add("Settings…", null, (_, _) => WebWindow.ShowSettings());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Quit Kothalipi", null, async (_, _) =>
+        menu.Items.Add("Quit AnyMeet", null, async (_, _) =>
         {
             if (state == State.Recording) await StopAsync(transcribe: false);
             tray.Visible = false;

@@ -1,4 +1,4 @@
-namespace Kothalipi;
+namespace AnyMeet;
 
 static class Program
 {

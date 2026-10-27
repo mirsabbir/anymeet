@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Text.Json;
 
-namespace Kothalipi;
+namespace AnyMeet;
 
 /// <summary>
-/// App settings, all in %APPDATA%\Kothalipi: settings.json for preferences,
+/// App settings, all in %APPDATA%\AnyMeet: settings.json for preferences,
 /// glossary.txt and .env (API key), the folder the `transcribe` command reads, as on macOS.
 /// </summary>
 static class Preferences
@@ -13,14 +13,14 @@ static class Preferences
     public static readonly string? TranscriberProject = FindTranscriber();
 
     /// <summary>
-    /// The transcriber project: KOTHALIPI_TRANSCRIBER if set, else the path
+    /// The transcriber project: ANYMEET_TRANSCRIBER if set, else the path
     /// baked in at build time, else a transcriber/ folder above the exe (a build
     /// inside the repo). A CI build's baked path doesn't exist here, so it falls through.
     /// </summary>
     static string? FindTranscriber()
     {
         static bool IsProject(string? dir) => dir != null && File.Exists(Path.Combine(dir, "pyproject.toml"));
-        var fromEnv = Environment.GetEnvironmentVariable("KOTHALIPI_TRANSCRIBER");
+        var fromEnv = Environment.GetEnvironmentVariable("ANYMEET_TRANSCRIBER");
         if (IsProject(fromEnv)) return fromEnv;
         var baked = typeof(Preferences).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "TranscriberProject")?.Value;
@@ -44,7 +44,7 @@ static class Preferences
 
     record Stored(bool AutoTranscribe = true, string Transcriber = "gemini-3.5-transcribe");
 
-    static readonly string SettingsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kothalipi", "settings.json");
+    static readonly string SettingsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AnyMeet", "settings.json");
 
     static Stored Load()
     {

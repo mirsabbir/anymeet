@@ -4,7 +4,7 @@ using NAudio.Wave;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
 
-namespace Kothalipi;
+namespace AnyMeet;
 
 /// <summary>
 /// Reads meeting folders under %USERPROFILE%\Meetings into the shapes the UI expects

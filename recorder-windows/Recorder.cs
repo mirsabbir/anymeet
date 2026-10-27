@@ -1,6 +1,6 @@
 using ScreenRecorderLib;
 
-namespace Kothalipi;
+namespace AnyMeet;
 
 /// <summary>
 /// Records every display to its own display-N.mp4, system audio to system.m4a

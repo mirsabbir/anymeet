@@ -39,5 +39,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Kothalipi-windows-x64
+          name: AnyMeet-windows-x64
           path: recorder-windows/publish

@@ -1,8 +1,8 @@
 r"""transcribe <audio file or meeting folder> [--glossary FILE] [--transcriber NAME]
 
 Settings: API keys in <config>/.env, the glossary in <config>/glossary.txt, where
-<config> is ~/Library/Application Support/Kothalipi (macOS),
-%APPDATA%\Kothalipi (Windows) or ~/.config/kothalipi.
+<config> is ~/Library/Application Support/AnyMeet (macOS),
+%APPDATA%\AnyMeet (Windows) or ~/.config/anymeet.
 
 A file is one speaker. In a folder, mic.* is "Me", system.* is "Others" and
 any other audio file is labelled with its own name. Output goes next to the
@@ -26,10 +26,10 @@ def config_dir() -> Path:
     """Per-user settings shared with the desktop apps: .env (API keys) and glossary.txt.
     Nothing user-specific lives in the code or the repository."""
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "Kothalipi"
+        return Path.home() / "Library" / "Application Support" / "AnyMeet"
     if sys.platform == "win32":
-        return Path(os.environ.get("APPDATA", Path.home())) / "Kothalipi"
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "kothalipi"
+        return Path(os.environ.get("APPDATA", Path.home())) / "AnyMeet"
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "anymeet"
 
 
 def _tracks(path: Path) -> tuple[dict[Path, str], Path]:
