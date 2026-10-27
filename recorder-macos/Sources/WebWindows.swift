@@ -21,7 +21,9 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
     }
 
     func showMeetings(id: String? = nil) { show("meetings", id: id, title: "AnyMeet", size: NSSize(width: 1180, height: 760)) }
-    func showSettings() { show("settings", id: nil, title: "AnyMeet Settings", size: NSSize(width: 860, height: 600)) }
+    func showSettings(tab: String? = nil) { show("settings", id: tab, title: "AnyMeet Settings", size: NSSize(width: 860, height: 600)) }
+
+    func window(_ view: String) -> (NSWindow, WKWebView)? { windows[view].map { ($0.window, $0.web) } }
 
     private func show(_ view: String, id: String?, title: String, size: NSSize) {
         if let existing = windows[view] {
@@ -109,7 +111,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             return await MeetingStore.get(p["id"] as? String ?? "")
         case "transcribe":
             guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
-            if !TranscriptionRunner.shared.start(folder) { throw BridgeError("transcription is already running or not set up") }
+            if !TranscriptionRunner.shared.start(folder) { throw BridgeError(TranscriptionRunner.shared.lastError) }
         case "openPath":
             try open(p["path"] as? String ?? "")
         case "getSettings":

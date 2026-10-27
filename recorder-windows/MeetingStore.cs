@@ -45,6 +45,9 @@ static class MeetingStore
             .Where(x => !string.IsNullOrEmpty(x.GetProperty("text").GetString()))
             .Select(x => $"[{Clock(x.GetProperty("start").GetDouble())}] {x.GetProperty("speaker").GetString()}: {x.GetProperty("text").GetString()}"));
         meeting["files"] = await Files(folder);
+        var log = Path.Combine(folder, "transcribe.log");
+        if ((string?)meeting["status"] == "failed" && File.Exists(log))
+            meeting["error"] = File.ReadLines(log).LastOrDefault(l => l.Trim().Length > 0) ?? "";  // the transcriber's own last words
         return meeting;
     }
 

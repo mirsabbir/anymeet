@@ -33,6 +33,7 @@ export interface Meeting extends MeetingSummary {
   segments: Segment[]
   files: MeetingFile[]
   transcriptText: string // plain text for copying
+  error?: string // last line of transcribe.log when transcription failed
 }
 
 export interface Transcriber {

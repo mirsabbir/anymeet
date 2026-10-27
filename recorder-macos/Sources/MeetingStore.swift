@@ -36,6 +36,9 @@ enum MeetingStore {
             return "[\(clock(s["start"] as? Double ?? 0))] \(s["speaker"] as? String ?? ""): \(text)"
         }.joined(separator: "\n\n")
         meeting["files"] = await files(folder)
+        if meeting["status"] as? String == "failed", let log = try? String(contentsOf: folder.appending(path: "transcribe.log"), encoding: .utf8) {
+            meeting["error"] = log.split(separator: "\n").last.map(String.init) ?? ""  // the transcriber's own last words
+        }
         return meeting
     }
 

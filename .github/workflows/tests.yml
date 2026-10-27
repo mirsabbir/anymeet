@@ -1,0 +1,31 @@
+# Runs on every push: transcriber tests, the shared UI build, and the macOS app build.
+# The macOS self-test (recorder-macos, --self-test) needs a desktop session and a
+# Gemini key, so it is run locally; see the README.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  transcriber:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - uses: astral-sh/setup-uv@v6
+      - name: pytest
+        working-directory: transcriber
+        run: uv run --python 3.12 pytest -q
+
+  ui-and-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build the UI and the macOS app
+        run: recorder-macos/build.sh

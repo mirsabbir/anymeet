@@ -77,6 +77,15 @@ Nothing personal lives in the code. Each user's settings folder holds:
 
 Both can be edited from the app: Settings → Transcription and Settings → Glossary.
 
+## Tests
+
+```bash
+cd transcriber && uv run pytest                       # transcriber: audio splitting, pipeline, CLI
+recorder-macos/build.sh && recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-test.json --fake-capture
+```
+
+The macOS self-test drives the real app: it records (with `--fake-capture`, a spoken test clip instead of the screen), stops from the menu-bar item, runs the transcriber, checks the menu-bar icon at every step, pastes into the API key field and copies to the clipboard, then writes a pass/fail report. Without `--fake-capture`, start it with `open -a AnyMeet --args --self-test <report.json>` so the real screen capture runs under AnyMeet's own permission. GitHub Actions runs the transcriber tests and builds on every push.
+
 ## License
 
 [MIT](LICENSE)

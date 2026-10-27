@@ -168,7 +168,8 @@ function Transcript({ meeting, query, onTranscribe }: { meeting: Meeting; query:
     return (
       <div className="empty">
         <h2>{meeting.status === 'failed' ? 'Transcription failed' : 'Not transcribed yet'}</h2>
-        <p>{meeting.status === 'failed' ? 'The recording is safe. Check transcribe.log in the meeting folder, then try again.' : 'The recording is saved. Transcribe it now to read and search it.'}</p>
+        <p>{meeting.status === 'failed' ? 'The recording is safe. Fix the problem below, then try again.' : 'The recording is saved. Transcribe it now to read and search it.'}</p>
+        {meeting.status === 'failed' && meeting.error && <p className="failed" style={{ flex: 'none', maxWidth: 560 }}>{meeting.error}</p>}
         <button className="btn primary" onClick={onTranscribe}>Transcribe now</button>
       </div>
     )

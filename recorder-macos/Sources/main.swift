@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     enum State { case idle, starting, recording(Date), stopping }
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let recorder = Recorder()
+    private let recorder: Capture = SelfTest.fakeCapture ? FakeCapture() : Recorder()
     static let recordingChanged = Notification.Name("RecordingChanged")
     /// Set at launch so the Meetings window can start and stop recordings too.
     private(set) static weak var shared: AppDelegate?
@@ -25,6 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
         Self.resetPrivacyAfterUpdate()
+        NSApp.mainMenu = Self.mainMenu()
+        let arguments = CommandLine.arguments
+        if let i = arguments.firstIndex(of: "--self-test"), i + 1 < arguments.count {
+            Task { @MainActor in await SelfTest.run(self, report: URL(filePath: arguments[i + 1])) }
+        }
         statusItem.button?.target = self
         statusItem.button?.action = #selector(clicked)
         // On press, not release: the timer redraws every second, and a redraw between
@@ -120,11 +125,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.notify(ok ? "Transcript ready" : "Transcription problem", folder.lastPathComponent)
             self?.render()
         }
-        if started { lastMessage = "Transcribing \(folder.lastPathComponent)" }
+        lastMessage = started ? "Transcribing \(folder.lastPathComponent)" : "⚠️ Can't transcribe: \(TranscriptionRunner.shared.lastError)"
         render()
     }
 
     @MainActor private func permissionsGranted() async -> Bool {
+        if SelfTest.fakeCapture { return true }  // the fake records nothing from the screen
         if !CGPreflightScreenCaptureAccess() {
             Self.resetPrivacy("ScreenCapture")  // drop a stale entry so macOS asks again for this build
             // Asking ScreenCaptureKit for content is what makes current macOS show its prompt
@@ -166,6 +172,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !version.contains("dev"), UserDefaults.standard.string(forKey: "lastLaunchedVersion") != version else { return }
         if UserDefaults.standard.string(forKey: "lastLaunchedVersion") != nil { resetPrivacy("ScreenCapture", "Microphone") }
         UserDefaults.standard.set(version, forKey: "lastLaunchedVersion")
+    }
+
+    /// A menu-bar app has no visible menu, but macOS still routes Cmd+C/V/X/A/Z to text
+    /// fields (the API key, the glossary) only through Edit menu items. Without this,
+    /// pasting into the Settings window did nothing.
+    static func mainMenu() -> NSMenu {
+        let main = NSMenu()
+        let app = NSMenu()
+        app.addItem(withTitle: "Quit AnyMeet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(withTitle: "AnyMeet", action: nil, keyEquivalent: "").submenu = app
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        main.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = edit
+        return main
+    }
+
+    // MARK: Read-outs for the self-test
+
+    var isRecording: Bool { if case .recording = state { true } else { false } }
+    var currentFolder: URL? { folder }
+
+    /// What the menu-bar item shows right now.
+    func menuBarLook() -> (icon: String, red: Bool, title: String) {
+        (shownIcon, statusItem.button?.contentTintColor == .systemRed, statusItem.button?.title ?? "")
+    }
+
+    /// Sends the status item's action the way a left click does.
+    func simulateStatusItemClick() {
+        statusItem.button?.performClick(nil)
     }
 
     /// The Recording shape in ui/src/types.ts.

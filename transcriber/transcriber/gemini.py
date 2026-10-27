@@ -18,8 +18,11 @@ class GeminiTranscriber:
     def __init__(self, model: str, languages: tuple[str, ...] = ("bn-BD", "en-US")):
         self.name = model
         self.languages = list(languages)
+        key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not key:
+            raise SystemExit("No Gemini API key: add it in AnyMeet → Settings → Transcription")
         self.client = genai.Client(
-            api_key=os.environ["GEMINI_API_KEY"],
+            api_key=key,
             http_options=types.HttpOptions(
                 timeout=120_000,  # ms; a stuck request fails instead of hanging the run
                 retry_options=types.HttpRetryOptions(

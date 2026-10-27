@@ -1,23 +1,48 @@
 import Foundation
 
-/// Runs `uv run --project <transcriber> transcribe <folder>` through a login shell
-/// (so uv is on PATH), one run per folder at a time. Output goes to transcribe.log
-/// in the meeting folder. Main thread only.
+/// Runs `uv run --project <transcriber> transcribe <folder>`, one run per folder at a
+/// time, with output in transcribe.log in the meeting folder. Main thread only.
+///
+/// Apps opened from Finder don't get the shell's PATH, so uv and ffmpeg (which the
+/// transcriber calls) are looked up in the usual install folders and added to PATH.
 final class TranscriptionRunner {
     static let shared = TranscriptionRunner()
     static let meetingsChanged = Notification.Name("MeetingsChanged")
+    static let toolFolders = ["/opt/homebrew/bin", "/usr/local/bin", "\(NSHomeDirectory())/.local/bin", "\(NSHomeDirectory())/.cargo/bin"]
 
     private(set) var running = Set<String>()
+    /// Why the last start() returned false, for the menu and the UI.
+    private(set) var lastError = ""
 
-    /// Returns false when the transcriber is not configured or this folder is already running.
+    static func find(_ tool: String) -> String? {
+        let path = ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":").map(String.init) ?? []
+        return (toolFolders + path).map { "\($0)/\(tool)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Returns false when the transcriber can't run or this folder is already running.
     @discardableResult
     func start(_ folder: URL, completion: ((Bool) -> Void)? = nil) -> Bool {
-        guard let project = Preferences.transcriberProject, !running.contains(folder.path) else { return false }
-        let process = Process()
-        process.executableURL = URL(filePath: "/bin/zsh")
-        process.arguments = ["-lc", "uv run --project \"$1\" transcribe \"$2\"", "zsh", project, folder.path]
-        process.environment = ProcessInfo.processInfo.environment.merging(["TRANSCRIBER": Preferences.transcriber]) { $1 }
         let log = folder.appending(path: "transcribe.log")
+        func fail(_ reason: String) -> Bool {
+            lastError = reason
+            try? (reason + "\n").write(to: log, atomically: true, encoding: .utf8)
+            NotificationCenter.default.post(name: Self.meetingsChanged, object: nil)
+            return false
+        }
+        guard !running.contains(folder.path) else { lastError = "already transcribing"; return false }
+        guard let project = Preferences.transcriberProject else {
+            return fail("transcriber not found: set it with `defaults write com.mirsabbir.anymeet transcriberProject <repo>/transcriber`")
+        }
+        guard let uv = Self.find("uv") else { return fail("uv not found: install it with `brew install uv`") }
+        guard Self.find("ffmpeg") != nil else { return fail("ffmpeg not found: install it with `brew install ffmpeg`") }
+
+        let process = Process()
+        process.executableURL = URL(filePath: uv)
+        process.arguments = ["run", "--project", project, "transcribe", folder.path]
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (Self.toolFolders + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
+        env["TRANSCRIBER"] = Preferences.transcriber
+        process.environment = env
         FileManager.default.createFile(atPath: log.path, contents: nil)
         if let handle = try? FileHandle(forWritingTo: log) {
             process.standardOutput = handle
@@ -30,7 +55,8 @@ final class TranscriptionRunner {
                 completion?(p.terminationStatus == 0)
             }
         }
-        do { try process.run() } catch { return false }
+        do { try process.run() } catch { return fail("couldn't start uv: \(error.localizedDescription)") }
+        lastError = ""
         running.insert(folder.path)
         NotificationCenter.default.post(name: Self.meetingsChanged, object: nil)
         return true
