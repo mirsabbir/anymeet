@@ -15,6 +15,7 @@ AnyMeet is a bot-free meeting recorder for macOS and Windows. One click records 
 | [transcriber/](transcriber/) | Audio → transcript, with one adapter per provider |
 | [benchmark/](benchmark/README.md) | Compare speech-to-text providers on your own audio |
 | [model/](model/README.md) | Plan for an open Bangla-English speech model, and how to contribute |
+| [assets/icon/](assets/icon/) | App icon: SVG masters, `make-icons.sh` builds the macOS `.icns` and Windows `.ico` |
 | [DESIGN.md](DESIGN.md) | Architecture and decisions (in Bangla) |
 
 ## Install on macOS

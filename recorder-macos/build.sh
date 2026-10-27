@@ -10,6 +10,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/ui"
 cp .build/release/AnyMeet "$APP/Contents/MacOS/AnyMeet"
 cp ../ui/dist/index.html "$APP/Contents/Resources/ui/index.html"
+cp ../assets/icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -20,6 +21,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>AnyMeet</string>
     <key>CFBundleExecutable</key><string>AnyMeet</string>
     <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0-dev}</string>
     <key>CFBundleVersion</key><string>${VERSION:-0.0.0-dev}</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>

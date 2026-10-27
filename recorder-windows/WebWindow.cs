@@ -50,6 +50,7 @@ sealed class WebWindow : Form
         ClientSize = size;
         MinimumSize = new Size(560, 420);
         StartPosition = FormStartPosition.CenterScreen;
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Controls.Add(web);
     }
 

@@ -16,6 +16,7 @@
     <AssemblyName>AnyMeet</AssemblyName>
     <RootNamespace>AnyMeet</RootNamespace>
     <Version>0.1.0</Version>
+    <ApplicationIcon>../assets/icon/anymeet.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
