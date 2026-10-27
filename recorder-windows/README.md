@@ -1,53 +1,53 @@
 # Meeting Recorder: Windows
 
-Mac অ্যাপের মতোই কাজ করে। টাস্কবারের notification area-তে একটা আইকন থাকে।
+Works like the macOS app, from an icon in the taskbar's notification area.
 
-- **বাম ক্লিক:** রেকর্ড শুরু বা বন্ধ।
-- **ডান ক্লিক:** মেনু, যেখানে Meetings… আর Settings… আছে।
-- **কী রেকর্ড হয়:** প্রতিটি ডিসপ্লে আলাদা `display-N.mp4`-এ, মাইক `mic.m4a`-এ, সিস্টেম অডিও `system.m4a`-এ।
-- **কোথায় যায়:** `%USERPROFILE%\Meetings\<তারিখ_সময়>\`-এ।
-- **UI:** Mac-এর একই React UI ([../ui](../ui)), এখানে WebView2-তে চলে।
+- **Left click:** start or stop recording.
+- **Right click:** menu with Meetings… and Settings….
+- **What it records:** each display to its own `display-N.mp4`, the microphone to `mic.m4a`, system audio to `system.m4a`.
+- **Where:** `%USERPROFILE%\Meetings\<date_time>\`.
+- **UI:** the same React UI as macOS ([../ui](../ui)), here in WebView2.
 
-| অংশ | লাইব্রেরি |
+| Part | Library |
 |---|---|
-| ডিসপ্লে | [ScreenRecorderLib](https://github.com/sskodje/ScreenRecorderLib) 6.6.0: প্রতিটি ডিসপ্লের জন্য আলাদা recorder, H.264, ১৫ fps |
-| মাইক আর সিস্টেম অডিও | NAudio 2.2.1 WASAPI (সিস্টেম অডিওর জন্য loopback), শেষে AAC-তে রূপান্তর |
-| UI | WebView2, `window.chrome.webview` bridge |
+| Displays | [ScreenRecorderLib](https://github.com/sskodje/ScreenRecorderLib) 6.6.0: one recorder per display, H.264, 15 fps |
+| Microphone and system audio | NAudio 2.2.1 WASAPI (loopback for system audio), encoded to AAC at the end |
+| UI | WebView2 with a `window.chrome.webview` bridge |
 
-সিস্টেম অডিও শুধু তখনই ডেটা দেয় যখন কোনো অ্যাপ শব্দ বাজায়। তাই ফাঁকা সময়গুলো নীরবতা দিয়ে ভরাট করা হয়। এতে mic আর system দুই ট্র্যাক একই ঘড়ি ধরে চলে, আর ট্রান্সক্রিপ্টে "Me" ও "Others"-এর কথা সঠিক ক্রমে সাজানো যায়।
+System audio only delivers data while some app is playing sound, so silent stretches are filled with silence. That keeps the mic and system tracks on the same clock, so "Me" and "Others" come out in the right order in the transcript.
 
-## যা লাগবে (একবার)
+## Requirements (once)
 
 ```powershell
 winget install Microsoft.DotNet.DesktopRuntime.8 Microsoft.VCRedist.2015+.x64 astral-sh.uv Gyan.FFmpeg
 ```
 
-WebView2 Windows 11-এ আগে থেকেই থাকে।
+WebView2 ships with Windows 11.
 
-## চালানো
+## Run
 
-- **নিজে build করে:** repo clone করো, তারপর:
+- **From a release:** download [MeetingRecorder-Windows-x64.zip](https://github.com/mirsabbir/bangla-meeting-recorder/releases/latest/download/MeetingRecorder-Windows-x64.zip), unzip, run `MeetingRecorder.exe`. The app isn't code-signed yet, so SmartScreen asks: choose "More info → Run anyway".
+- **From source:** clone the repo, then
   ```powershell
   cd ui; npm ci; npm run build; cd ..\recorder-windows; dotnet run -c Release
   ```
-- **build না করে:** GitHub-এর **Actions → Windows app** থেকে সর্বশেষ সফল run-এর `MeetingRecorder-windows-x64` zip নামাও।
 
-transcriber কোথায় আছে, অ্যাপ তা এই ক্রমে খোঁজে:
+The app looks for the transcriber (a clone of this repo's `transcriber\` folder) in this order:
 
-1. `MEETING_RECORDER_TRANSCRIBER` environment variable
-2. build-এর সময় যে path ঢোকানো হয়েছিল
-3. exe-র উপরের কোনো ফোল্ডারে থাকা `transcriber\`
+1. the `MEETING_RECORDER_TRANSCRIBER` environment variable
+2. the path baked in at build time
+3. a `transcriber\` folder above the exe
 
-zip থেকে চালালে প্রথমটা সেট করে দাও:
+When running from the zip, set the first one:
 
 ```powershell
 setx MEETING_RECORDER_TRANSCRIBER "C:\path\to\bangla-meeting-recorder\transcriber"
 ```
 
-## অবস্থা
+## Status
 
-এই অ্যাপ macOS-এ compile হয় আর GitHub Actions-এ Windows-এ build হয়। কিন্তু **এখনো কোনো Windows কম্পিউটারে চালিয়ে পরীক্ষা করা হয়নি।** প্রথমবার চালানোর সময় এগুলো দেখতে হবে:
+The app compiles on macOS and builds on Windows in GitHub Actions, but **it has not been run on a Windows computer yet.** On a first run, check that:
 
-- সব ডিসপ্লের ভিডিও তৈরি হচ্ছে কিনা
-- দুই অডিও ট্র্যাকে শব্দ আছে কিনা
-- Meetings আর Settings উইন্ডো খুলছে কিনা
+- every display produces a video
+- both audio tracks contain sound
+- the Meetings and Settings windows open

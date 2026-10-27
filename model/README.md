@@ -1,82 +1,82 @@
-# নিজেদের বাংলা ট্রান্সক্রিপশন মডেল: পরিকল্পনা
+# An open Bangla-English speech model: plan
 
-লক্ষ্য: একটা **ওপেন সোর্স** speech-to-text মডেল, যা **বাংলা, ইংরেজি আর দুটো মেশানো কথায়** দক্ষ, আর একটা সাধারণ Mac-এ চলে। অন্য ভাষায় দুর্বল হলে সমস্যা নেই, কারণ সেগুলোর জন্য ভালো মডেল আগে থেকেই আছে।
+Goal: an **open-source** speech-to-text model that is strong at **Bangla, English and mixed Bangla-English speech**, and runs on an ordinary Mac. Weak spots in other languages are fine; good models already exist for those.
 
-এই পাতা পরিকল্পনা মাত্র, এখনো কোনো মডেল ট্রেন করা হয়নি। ডেটাসেটের ঘণ্টা আর লাইসেন্সের তথ্য ২০২৬ সালের প্রকাশিত উৎস থেকে নেওয়া। ব্যবহারের আগে প্রতিটা আবার যাচাই করতে হবে।
+This is a plan; no model has been trained yet. Dataset sizes and licenses come from sources published in 2026. Check each one again before use.
 
-## সিদ্ধান্ত ১: শূন্য থেকে নয়, fine-tune
+## Decision 1: fine-tune, don't train from scratch
 
-| | শূন্য থেকে ট্রেন | ওপেন মডেল fine-tune |
+| | From scratch | Fine-tune an open model |
 |---|---|---|
-| ডেটা | ১০,০০০+ ঘণ্টা লেবেল করা অডিও | ১–৩ হাজার ঘণ্টা পাবলিক বাংলা + কয়েকশো ঘণ্টা মেশানো কথা |
-| কম্পিউট | কয়েক সপ্তাহ, অনেক GPU | কয়েক দিন, ভাড়া করা কয়েকটা GPU |
-| ঝুঁকি | উঁচু | কম: ভিত্তি মডেল আগে থেকেই কথা বোঝে |
+| Data | 10,000+ hours of labelled audio | 1–3 thousand hours of public Bangla + a few hundred hours of mixed speech |
+| Compute | weeks on many GPUs | days on a few rented GPUs |
+| Risk | high | low: the base model already understands speech |
 
-Whisper-এর মতো মডেল লাখো ঘণ্টার বহুভাষিক অডিওতে আগেই শিখে আছে। আমাদের কাজ শুধু তাকে বাংলা আর বাংলাদেশের মেশানো কথায় দক্ষ করা।
+Models like Whisper were trained on hundreds of thousands of hours of multilingual audio. The job is to make one excellent at Bangla and at the way people in Bangladesh mix Bangla and English.
 
-## সিদ্ধান্ত ২: মডেলের আকার (Mac-এ চলতে হবে)
+## Decision 2: model size (it must run on a Mac)
 
-| ভিত্তি মডেল | প্যারামিটার | Mac-এ | মন্তব্য |
+| Base model | Parameters | On a Mac | Notes |
 |---|---|---|---|
-| **Whisper large-v3-turbo** | ~৮০৯M | M1/M2/M3-এ MLX বা whisper.cpp দিয়ে বাস্তব সময়ের চেয়ে দ্রুত; 4-bit-এ ~০.৫ GB | **প্রথম পছন্দ।** বহুভাষিক, ইংরেজি আগে থেকেই শক্ত, মেশানো কথার জন্য ভালো ভিত্তি |
-| Whisper small | ~২৪৪M | পুরোনো Mac বা কম RAM-এও চলে | হালকা সংস্করণ, নির্ভুলতা কম |
-| IndicConformer (bn) | ~১২০M | খুব দ্রুত (CTC/RNN-T) | শুধু বাংলা, ইংরেজি দুর্বল। মেশানো কথায় সীমিত |
+| **Whisper large-v3-turbo** | ~809M | faster than real time on M1/M2/M3 with MLX or whisper.cpp; ~0.5 GB at 4-bit | **First choice.** Multilingual and already strong in English, a good base for mixed speech |
+| Whisper small | ~244M | runs on older Macs and low RAM | lighter variant, less accurate |
+| IndicConformer (bn) | ~120M | very fast (CTC/RNN-T) | Bangla only, weak English, limited for mixed speech |
 
-ভিত্তি হিসেবে তুলনা করবো BengaliAI-এর বাংলায় fine-tune করা Whisper-medium-এর সাথে। আমাদের [benchmark](../benchmark/README.md)-এ এটা `local-bengaliai-whisper` নামে আগে থেকেই আছে।
+The baseline to beat is BengaliAI's Bangla fine-tune of Whisper-medium, already in the [benchmark](../benchmark/README.md) as `local-bengaliai-whisper`.
 
-## সিদ্ধান্ত ৩: ডেটা
+## Decision 3: data
 
-| ডেটাসেট | কী আছে | লাইসেন্স (যাচাই করতে হবে) | বাণিজ্যিক ব্যবহার |
+| Dataset | Contents | License (verify) | Commercial use |
 |---|---|---|---|
-| Mozilla Common Voice (bn) | মানুষের পড়া বাক্য | CC0 | ✅ |
-| OpenSLR-53 | ~২২৯ ঘণ্টা বাংলা | CC BY-SA 4.0 | ✅ (share-alike) |
-| Google FLEURS (bn_in) | ~১০+ ঘণ্টা, পড়া | CC BY 4.0 | ✅ |
-| AI4Bharat IndicVoices / Shrutilipi | ভারতের বাংলা, কথোপকথন আর রেডিও | CC BY 4.0 | ✅ |
-| MUCS 2021 বাংলা-ইংরেজি | ~৪৬ ঘণ্টা **মেশানো কথা** (টেকনিক্যাল লেকচার) | CC BY-SA 4.0 | ✅ (share-alike) |
-| Bengali.AI Speech (Kaggle) | বড়, বৈচিত্র্যময় | প্রতিযোগিতার শর্ত দেখতে হবে | ❓ |
-| BanSpeech | ১৩ ধরনের বিষয় | CC BY-NC | ❌ শুধু মূল্যায়নের জন্য |
+| Mozilla Common Voice (bn) | read sentences | CC0 | ✅ |
+| OpenSLR-53 | ~229 h Bangla | CC BY-SA 4.0 | ✅ (share-alike) |
+| Google FLEURS (bn_in) | ~10+ h, read | CC BY 4.0 | ✅ |
+| AI4Bharat IndicVoices / Shrutilipi | Indian Bangla, conversation and radio | CC BY 4.0 | ✅ |
+| MUCS 2021 Bengali-English | ~46 h of **mixed speech** (technical lectures) | CC BY-SA 4.0 | ✅ (share-alike) |
+| Bengali.AI Speech (Kaggle) | large, varied | check the competition terms | ❓ |
+| BanSpeech | 13 domains | CC BY-NC | ❌ evaluation only |
 
-**বড় ফাঁক:** বাংলাদেশের অফিস বা মিটিংয়ের **মেশানো কথোপকথন** ("deploy টা fail করছে কেন")-এর কোনো পাবলিক ডেটাসেট নেই। তাই এই ডেটা আমাদের নিজেদেরই জোগাড় করতে হবে, মানুষের সাহায্য নিয়ে।
+**The big gap:** there is no public dataset of **mixed office or meeting conversation** from Bangladesh ("deploy টা fail করছে কেন"). That data has to be collected, with people's help.
 
-### যেভাবে লেবেল বানানো যাবে না
+### Labels we must not use
 
-বাণিজ্যিক বা ক্লোজড API-র লেখা (Gemini, OpenAI …) সরাসরি ট্রেনিং লেবেল হিসেবে ব্যবহার করা যাবে না। অনেক সার্ভিসের শর্তে প্রতিযোগী মডেল বানাতে তাদের আউটপুট ব্যবহার নিষেধ। এর বদলে মানুষের হাতে ঠিক করা লেখা, আর ওপেন মডেলের লেখা যেটা মানুষ যাচাই করেছে, সেগুলো ব্যবহার করতে হবে।
+Transcripts from commercial or closed APIs (Gemini, OpenAI …) must not be used as training labels: many terms of service forbid using outputs to build competing models. Use human-corrected text, and open-model output that a person has checked.
 
-## মানুষ কীভাবে অবদান রাখবে
+## How people can contribute
 
 ```mermaid
 flowchart LR
-    A[অ্যাপ: নিজের মিটিং] -->|শুধু সবার সম্মতি থাকলে| B[অংশ বাছাই + লেখা ঠিক করা]
-    C[ওয়েবসাইট: বাক্য পড়ে রেকর্ড<br/>Common Voice-এর মতো] --> D
-    E[ওয়েবসাইট: অন্যের লেখা যাচাই] --> D
-    B --> D[(খোলা ডেটাসেট<br/>CC BY 4.0, Hugging Face)]
+    A[App: your own meeting] -->|only with everyone's consent| B[pick a clip + correct the text]
+    C[Website: read sentences aloud<br/>like Common Voice] --> D
+    E[Website: check others' transcripts] --> D
+    B --> D[(open dataset<br/>CC BY 4.0, Hugging Face)]
     D --> F[fine-tune]
-    F --> G[ওপেন মডেল প্রকাশ]
+    F --> G[open model release]
     G --> A
 ```
 
-- **সম্মতি আগে:** অডিওতে যতজনের কণ্ঠ আছে, সবার স্পষ্ট সম্মতি লাগবে। এক পক্ষের সম্মতি যথেষ্ট নয়। অ্যাপে "Donate this clip" এমনভাবে বানাতে হবে যাতে সম্মতি না দিলে এগোনো না যায়।
-- **নিজের কণ্ঠ দিয়ে শুরু:** শুধু মাইকের ট্র্যাক ("Me") দিলে শুধু নিজের সম্মতিই লাগে।
-- **গোপনীয়তা:** নাম, নম্বর আর ঠিকানা মুছে ফেলার ধাপ থাকবে।
-- **প্রথম লক্ষ্য:** ১০০–৩০০ ঘণ্টা যাচাই করা মেশানো কথা। এর একটা অংশ আলাদা রাখা হবে **পাবলিক টেস্ট সেট** হিসেবে, যা এখনো কোথাও নেই।
+- **Consent first.** Everyone whose voice is in a clip must agree, not just the person donating it. A "Donate this clip" button must not proceed without it.
+- **Start with your own voice.** Donating only the mic track ("Me") needs only your own consent.
+- **Privacy.** A step removes names, numbers and addresses.
+- **First target:** 100–300 hours of checked mixed speech, part of it held out as a **public test set**, which doesn't exist anywhere yet.
 
-## অ্যাপের সাথে যোগ
+## Plugging it into the app
 
-অ্যাপ আগে থেকেই এর জন্য তৈরি: transcriber-এর [অ্যাডাপ্টার প্যাটার্ন](../DESIGN.md)। মডেল তৈরি হলে দুটো কাজ লাগবে:
+The app is ready for this through the transcriber's adapter pattern ([DESIGN.md](../DESIGN.md)). Once a model exists:
 
-1. `transcriber`-এ একটা `local-bangla` অ্যাডাপ্টার, যেটা MLX বা whisper.cpp দিয়ে Mac-এই চলবে, ইন্টারনেট লাগবে না।
-2. Settings-এ "Not added yet" কার্ডের জায়গায় মডেলটা।
+1. Add a `local-bangla` adapter to `transcriber` that runs on the Mac with MLX or whisper.cpp, no internet needed.
+2. Replace the "Not added yet" card in Settings with the model.
 
-## ধাপ
+## Milestones
 
-| ধাপ | কাজ |
+| Step | Work |
 |---|---|
-| M0 | নিজের মিটিং দিয়ে benchmark-এ মাপকাঠি ঠিক করা: Gemini, Soniox, Sarvam, BengaliAI-Whisper |
-| M1 | পাবলিক ডেটা (শুধু বাণিজ্যিক-অনুমোদিত লাইসেন্স) দিয়ে Whisper-turbo fine-tune → v0 |
-| M2 | অবদানের ব্যবস্থা: অ্যাপে "Donate" + পড়া/যাচাইয়ের ওয়েবসাইট; ১০০–৩০০ ঘণ্টা মেশানো কথা |
-| M3 | v1: মেশানো কথায় fine-tune, ওপেন weights, Mac-এ লোকাল অ্যাডাপ্টার |
-| M4 | হোস্ট করা API (পেইড), যাদের নিজের মেশিনে চালানোর সুযোগ নেই তাদের জন্য |
+| M0 | Set the bar on your own meetings in the benchmark: Gemini, Soniox, Sarvam, BengaliAI-Whisper |
+| M1 | Fine-tune Whisper-turbo on public data (commercial-friendly licenses only) → v0 |
+| M2 | Contribution tools: "Donate" in the app + a read/check website; 100–300 h of mixed speech |
+| M3 | v1: fine-tuned on mixed speech, open weights, local adapter for Mac |
+| M4 | Hosted API (paid) for people who can't run it themselves |
 
-## আয়ের পথ
+## Sustainability
 
-মডেল আর কোড খোলা থাকবে। আয় আসবে হোস্ট করা API, দলের জন্য সাবস্ক্রিপশন আর কাস্টম শব্দকোষ বা fine-tune সেবা থেকে। এই কারণে **ট্রেনিং ডেটার লাইসেন্স অবশ্যই বাণিজ্যিক ব্যবহার অনুমোদন করতে হবে।** NC লাইসেন্সের ডেটা শুধু মূল্যায়নে চলবে।
+The model and the code stay open. Income can come from a hosted API, team subscriptions, and custom glossary or fine-tuning services. That is why **training data must allow commercial use**; NC-licensed data is for evaluation only.

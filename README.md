@@ -1,28 +1,55 @@
-# বাংলা মিটিং রেকর্ডার
+# Meeting Recorder
 
-বট ছাড়া মিটিং রেকর্ডার। এক ক্লিকে সব ডিসপ্লে, মাইক আর সিস্টেম অডিও রেকর্ড হয়। রেকর্ড শেষে বাংলা, ইংরেজি আর মেশানো কথার ট্রান্সক্রিপ্ট তৈরি হয়।
+A bot-free meeting recorder for macOS and Windows. One click records every display, your microphone and the system audio (Zoom, Teams, Meet …) as separate files. When you stop, it writes a transcript that handles **Bangla, English and mixed Bangla-English speech**.
 
-| ফোল্ডার | কী আছে |
+- **No meeting bot.** Everything is captured on your own computer; recordings stay in `~/Meetings`.
+- **Speakers from tracks.** Your microphone is labelled "Me", system audio "Others".
+- **Your words, spelled right.** A personal glossary (names, products, jargon) keeps English terms in English letters.
+- **Swappable transcription.** Gemini 3.5 Transcribe by default; providers plug in through a small adapter.
+
+| Folder | What's inside |
 |---|---|
-| [DESIGN.md](DESIGN.md) | পুরো ডিজাইন আর সিদ্ধান্তগুলো |
-| [recorder-macos/](recorder-macos/) | macOS মেনু বার অ্যাপ (Swift, ScreenCaptureKit)। build করতে `./build.sh` |
-| [ui/](ui/) | Meetings আর Settings উইন্ডো (React)। Mac আর Windows দুটোতেই একই UI। `npm run dev` চালালে নমুনা ডেটা দিয়ে চলে |
-| [transcriber/](transcriber/) | অডিও থেকে ট্রান্সক্রিপ্ট। মডেল বদলানো যায় অ্যাডাপ্টার দিয়ে, ডিফল্ট Gemini 3.5 Transcribe |
-| [model/](model/README.md) | নিজেদের ওপেন বাংলা-ইংরেজি মডেলের পরিকল্পনা, আর মানুষ কীভাবে অবদান রাখবে |
-| [benchmark/](benchmark/README.md) | নিজের অডিওতে বিভিন্ন STT সার্ভিসের তুলনা |
+| [recorder-macos/](recorder-macos/) | macOS menu-bar app (Swift, ScreenCaptureKit). Build with `./build.sh` |
+| [recorder-windows/](recorder-windows/README.md) | Windows tray app (C# .NET 8, ScreenRecorderLib, NAudio, WebView2) |
+| [ui/](ui/) | Meetings and Settings windows (React), shared by both apps. `npm run dev` runs it with sample data |
+| [transcriber/](transcriber/) | Audio → transcript, with one adapter per provider |
+| [benchmark/](benchmark/README.md) | Compare speech-to-text providers on your own audio |
+| [model/](model/README.md) | Plan for an open Bangla-English speech model, and how to contribute |
+| [DESIGN.md](DESIGN.md) | Architecture and decisions (in Bangla) |
 
-## Release থেকে install (macOS)
+## Install on macOS
 
-`v*` tag push করলে GitHub Actions Mac-এর DMG আর Windows-এর zip বানিয়ে [Releases](https://github.com/mirsabbir/bangla-meeting-recorder/releases)-এ তোলে। Windows-এর নিয়ম: [recorder-windows/README.md](recorder-windows/README.md)।
+Every `v*` tag builds a macOS DMG and a Windows zip with GitHub Actions and publishes them under [Releases](https://github.com/mirsabbir/bangla-meeting-recorder/releases). The app is not signed with an Apple Developer ID yet, so macOS has to be told to trust it (the `xattr` line).
 
 ```bash
 cd ~/Downloads && curl -LO https://github.com/mirsabbir/bangla-meeting-recorder/releases/latest/download/MeetingRecorder-macOS.dmg
 hdiutil attach MeetingRecorder-macOS.dmg
 cp -R "/Volumes/Meeting Recorder/Meeting Recorder.app" /Applications/
 hdiutil detach "/Volumes/Meeting Recorder"
-xattr -dr com.apple.quarantine "/Applications/Meeting Recorder.app"   # Apple Developer ID নেই, তাই Gatekeeper-কে জানানো
+xattr -dr com.apple.quarantine "/Applications/Meeting Recorder.app"
 defaults write com.mirsabbir.meetingrecorder transcriberProject <repo-path>/transcriber
 open "/Applications/Meeting Recorder.app"
 ```
 
-transcriber চালাতে `uv` আর `ffmpeg` লাগে (`brew install uv ffmpeg`)। প্রথমবার রেকর্ড করার সময় Screen Recording আর মাইকের অনুমতি দিতে হয়।
+Transcription needs a clone of this repository (the `transcriberProject` path above) plus `uv` and `ffmpeg` (`brew install uv ffmpeg`). On the first recording macOS asks for Screen Recording and Microphone access. Because the app is ad-hoc signed, it asks again after each update.
+
+Windows: see [recorder-windows/README.md](recorder-windows/README.md).
+
+## Settings
+
+Nothing personal lives in the code. Each user's settings folder holds:
+
+- `.env`: the API key, e.g. `GEMINI_API_KEY=…`
+- `glossary.txt`: one term per line
+
+| OS | Folder |
+|---|---|
+| macOS | `~/Library/Application Support/MeetingRecorder/` |
+| Windows | `%APPDATA%\MeetingRecorder\` |
+| Linux (CLI only) | `~/.config/meeting-recorder/` |
+
+Both can be edited from the app: Settings → Transcription and Settings → Glossary.
+
+## License
+
+[MIT](LICENSE)
