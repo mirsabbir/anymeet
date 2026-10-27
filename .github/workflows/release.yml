@@ -1,0 +1,78 @@
+# Pushing a tag like v0.1.0 builds the macOS DMG and the Windows zip and
+# publishes both as a GitHub Release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the app
+        run: VERSION="${GITHUB_REF_NAME#v}" recorder-macos/build.sh
+
+      - name: Make the DMG
+        run: |
+          mkdir dmg
+          cp -R "recorder-macos/build/Meeting Recorder.app" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Meeting Recorder" -srcfolder dmg -ov -format UDZO MeetingRecorder-macOS.dmg
+          codesign -dv "dmg/Meeting Recorder.app" 2>&1 | grep -E "Identifier|Signature|Authority" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: MeetingRecorder-macOS.dmg
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build the shared React UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish and zip
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          dotnet publish recorder-windows -c Release -o publish -p:Version=$version
+          if (-not (Test-Path publish/ui/index.html)) { throw "ui/index.html missing from the build" }
+          Compress-Archive -Path publish/* -DestinationPath MeetingRecorder-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: MeetingRecorder-Windows-x64.zip
+
+  release:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" MeetingRecorder-* --repo "$GITHUB_REPOSITORY" --title "Meeting Recorder $GITHUB_REF_NAME" --generate-notes

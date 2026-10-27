@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 10.0.19041 gives the WinRT APIs used for video thumbnails. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <Platform>x64</Platform>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <!-- Lets the project compile on macOS/Linux too (it only runs on Windows). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>MeetingRecorder</AssemblyName>
+    <RootNamespace>MeetingRecorder</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ScreenRecorderLib" Version="6.6.0" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The transcriber project the app runs after a recording (same as TranscriberProject on macOS). -->
+    <AssemblyMetadata Include="TranscriberProject" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../transcriber'))" />
+    <!-- The shared React UI, built by `npm run build` in ../ui. -->
+    <Content Include="../ui/dist/index.html" Link="ui/index.html" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../ui/dist/index.html')" />
+  </ItemGroup>
+</Project>

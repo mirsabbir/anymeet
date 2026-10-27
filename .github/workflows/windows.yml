@@ -1,0 +1,43 @@
+# Builds the Windows app on a real Windows machine and uploads it as a zip.
+# The app is built here because it can't be run on the macOS dev machine.
+name: Windows app
+
+on:
+  push:
+    paths: ["recorder-windows/**", "ui/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the shared React UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish the app
+        working-directory: recorder-windows
+        run: dotnet publish -c Release -o publish
+
+      - name: Check the UI is bundled
+        shell: pwsh
+        run: if (-not (Test-Path recorder-windows/publish/ui/index.html)) { throw "ui/index.html missing from the build" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeetingRecorder-windows-x64
+          path: recorder-windows/publish
