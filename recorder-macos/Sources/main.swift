@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import ScreenCaptureKit
 
 /// Menu-bar app. Left click starts or stops a recording; right click opens the menu.
 /// After a recording stops, the transcriber runs on the meeting folder (unless
@@ -126,6 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor private func permissionsGranted() async -> Bool {
         if !CGPreflightScreenCaptureAccess() {
             Self.resetPrivacy("ScreenCapture")  // drop a stale entry so macOS asks again for this build
+            // Asking ScreenCaptureKit for content is what makes current macOS show its prompt
+            // and list the app under Screen & System Audio Recording; the CG call alone often doesn't.
+            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             CGRequestScreenCaptureAccess()
             lastMessage = "⚠️ Allow Screen Recording, then restart the app"
             render()
