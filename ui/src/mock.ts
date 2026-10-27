@@ -48,11 +48,14 @@ let recording: Recording = { state: 'idle', message: 'Ready' }
 export async function mockHost(method: keyof HostApi, params: unknown): Promise<unknown> {
   const p = (params ?? {}) as Record<string, unknown>
   switch (method) {
+    case 'checkForUpdate': return { current: '0.3.2', latest: '0.3.3', available: true }
+    case 'installUpdate': throw new Error('Updates only work in the app')
     case 'getRecording': return { ...recording }
     case 'startRecording': recording = { state: 'recording', startedAt: new Date().toISOString(), message: 'Recording' }; return
     case 'stopRecording': recording = { state: 'idle', message: 'Saved' }; return
     case 'listMeetings': return meetings.map(({ id, startedAt, durationSec, status, preview }) => ({ id, startedAt, durationSec, status, preview }))
     case 'getMeeting': return meetings.find((m) => m.id === p.id)
+    case 'deleteMeeting': meetings.splice(meetings.findIndex((m) => m.id === p.id), 1); return
     case 'getSettings': return { ...settings }
     case 'setAutoTranscribe': settings.autoTranscribe = p.value as boolean; return
     case 'setTranscriber': settings.transcriber = p.id as string; return

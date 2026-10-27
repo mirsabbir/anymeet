@@ -15,7 +15,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>AnyMeet</AssemblyName>
     <RootNamespace>AnyMeet</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.0.0-dev</Version>
     <ApplicationIcon>../assets/icon/anymeet.ico</ApplicationIcon>
   </PropertyGroup>
 
@@ -27,6 +27,8 @@
 
   <ItemGroup>
     <!-- The transcriber project the app runs after a recording (same as TranscriberProject on macOS). -->
+    <!-- owner/repo whose GitHub Releases the app updates from; CI passes -p:UpdateRepository. -->
+    <AssemblyMetadata Include="UpdateRepository" Value="$(UpdateRepository)" />
     <AssemblyMetadata Include="TranscriberProject" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../transcriber'))" />
     <!-- The shared React UI, built by `npm run build` in ../ui. -->
     <Content Include="../ui/dist/index.html" Link="ui/index.html" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../ui/dist/index.html')" />

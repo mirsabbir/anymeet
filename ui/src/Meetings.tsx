@@ -3,6 +3,7 @@ import { call, on } from './bridge'
 import { clock, dateTime, dayLabel, duration, time } from './format'
 import { Icon } from './icons'
 import { RecordBar } from './RecordBar'
+import { UpdateBanner } from './Update'
 import type { Meeting, MeetingSummary, Segment, TranscriptStatus } from './types'
 
 const STATUS: Record<TranscriptStatus, [string, string]> = {
@@ -21,6 +22,8 @@ export function Meetings({ initialId }: { initialId?: string }) {
   const [list, setList] = useState<MeetingSummary[]>([])
   const [selected, setSelected] = useState<string | undefined>(initialId)
   const [query, setQuery] = useState('')
+  const [keyMissing, setKeyMissing] = useState(false)
+  useEffect(() => { call('getSettings').then((s) => setKeyMissing(!s.apiKeySet)) }, [])
 
   const refresh = useCallback(() => {
     call('listMeetings').then((items) => {
@@ -59,9 +62,20 @@ export function Meetings({ initialId }: { initialId?: string }) {
           </div>
         ))}
         {list.length > 0 && shown.length === 0 && <p className="muted small" style={{ padding: 8 }}>No meeting matches “{query}”.</p>}
+        <div className="sidebar-footer">
+          <a className="tab" href="#/settings"><Icon name="gear" />Settings</a>
+        </div>
       </nav>
       <main className="content">
-        {selected ? <MeetingDetail key={selected} id={selected} query={q} /> : (
+        <UpdateBanner />
+        {keyMissing && (
+          <div className="banner" role="status">
+            <Icon name="key" />
+            <span style={{ flex: 1 }}><strong>Add your Gemini API key</strong> to get transcripts. Recordings work without it.</span>
+            <a className="btn primary" href="#/settings/transcription">Open Settings</a>
+          </div>
+        )}
+        {selected ? <MeetingDetail key={selected} id={selected} query={q} onDeleted={() => { setSelected(undefined); refresh() }} /> : (
           <div className="empty">
             <h2>No meetings yet</h2>
             <p>Click Start recording to record your first meeting.</p>
@@ -72,9 +86,11 @@ export function Meetings({ initialId }: { initialId?: string }) {
   )
 }
 
-function MeetingDetail({ id, query }: { id: string; query: string }) {
+function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; onDeleted: () => void }) {
   const [meeting, setMeeting] = useState<Meeting>()
   const [copied, setCopied] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   const load = useCallback(() => { call('getMeeting', { id }).then(setMeeting) }, [id])
   useEffect(() => { load(); return on('meetingsChanged', load) }, [load])
@@ -108,6 +124,16 @@ function MeetingDetail({ id, query }: { id: string; query: string }) {
                 <button className="btn primary" onClick={copy}><Icon name={copied ? 'check' : 'copy'} />{copied ? 'Copied' : 'Copy transcript'}</button>
               </>
             ) : null}
+            {confirming ? (
+              <span className="confirm" role="group" aria-label="Confirm delete">
+                <span>Move this meeting to the Trash?</span>
+                <button className="btn danger" onClick={() => call('deleteMeeting', { id }).then(onDeleted, (e: Error) => { setDeleteError(e.message); setConfirming(false) })}>Delete</button>
+                <button className="btn" onClick={() => setConfirming(false)}>Cancel</button>
+              </span>
+            ) : (
+              <button className="btn" onClick={() => { setDeleteError(''); setConfirming(true) }} disabled={meeting.status === 'transcribing'}><Icon name="trash" />Delete</button>
+            )}
+            {deleteError && <span className="small" style={{ flexBasis: '100%', color: 'var(--warn)' }}>{deleteError}</span>}
           </div>
         </header>
         <Transcript meeting={meeting} query={query} onTranscribe={transcribe} />

@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Builds "AnyMeet.app" into build/. VERSION sets the version (default 0.0.0-dev).
+# Builds "AnyMeet.app" into build/. VERSION sets the version (default 0.0.0-dev);
+# UPDATE_REPOSITORY (owner/repo) turns on updates from that repo's GitHub Releases.
 set -euo pipefail
 cd "${0:A:h}"
 
@@ -27,6 +28,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSUIElement</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>Records your voice in meetings as its own track.</string>
+    <key>UpdateRepository</key><string>${UPDATE_REPOSITORY:-}</string>
     <key>TranscriberProject</key><string>${PWD:h}/transcriber</string>
 </dict>
 </plist>

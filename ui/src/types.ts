@@ -61,13 +61,23 @@ export interface Recording {
   message: string // the tray's last status line; starts with ⚠️ for problems
 }
 
+export interface UpdateInfo {
+  current: string // this build's version, e.g. "0.3.2"
+  latest?: string // newest release on GitHub, when the check worked
+  available: boolean
+  error?: string // why the check failed, e.g. offline
+}
+
 export interface HostApi {
+  checkForUpdate(p: { force?: boolean }): UpdateInfo // cached for an hour unless forced
+  installUpdate(): void // downloads, replaces the app and relaunches; rejects while recording
   getRecording(): Recording
   startRecording(): void // resolves once recording has started or failed
   stopRecording(): void // resolves once the files are closed
   listMeetings(): MeetingSummary[]
   getMeeting(p: { id: string }): Meeting
   transcribe(p: { id: string }): void
+  deleteMeeting(p: { id: string }): void // moves the folder to the Trash / Recycle Bin
   openPath(p: { path: string }): void
   getSettings(): Settings
   setAutoTranscribe(p: { value: boolean }): void

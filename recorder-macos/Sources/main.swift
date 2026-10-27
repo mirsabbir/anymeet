@@ -25,7 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Self.shared = self
         statusItem.button?.target = self
         statusItem.button?.action = #selector(clicked)
-        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // On press, not release: the timer redraws every second, and a redraw between
+        // press and release made macOS drop the click (Stop did nothing).
+        statusItem.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        statusItem.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         recorder.onStreamError = { [weak self] error in
             DispatchQueue.main.async { self?.lastMessage = "⚠️ Recording stopped: \(error.localizedDescription)"; self?.render() }
         }
@@ -67,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func clicked() {
-        if NSApp.currentEvent?.type == .rightMouseUp { showMenu(); return }
+        if NSApp.currentEvent?.type == .rightMouseDown { showMenu(); return }
         switch state {
         case .idle: Task { @MainActor in await start() }
         case .recording: Task { @MainActor in await stop(transcribe: Preferences.autoTranscribe) }
@@ -149,18 +152,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: UI
 
+    private var shownIcon = ""
+
     private func render() {
         guard let button = statusItem.button else { return }
         let transcribing = !TranscriptionRunner.shared.running.isEmpty
-        let (symbol, tint, title): (String, NSColor?, String) = switch state {
-        case .recording(let since): ("stop.circle.fill", .systemRed, " " + Self.clock(Date().timeIntervalSince(since)))
+        let (icon, tint, title): (String, NSColor?, String) = switch state {
+        case .recording(let since): ("bubble", .systemRed, " " + Self.clock(Date().timeIntervalSince(since)))
         case .starting, .stopping: ("hourglass", nil, "")
-        case .idle: (transcribing ? "text.bubble" : "record.circle", nil, "")
+        case .idle: (transcribing ? "text.bubble" : "bubble", nil, "")
         }
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "AnyMeet")
+        // Only swap the image when the state changes; the timer just updates the text.
+        if icon != shownIcon {
+            button.image = icon == "bubble" ? Self.bubble : NSImage(systemSymbolName: icon, accessibilityDescription: "AnyMeet")
+            shownIcon = icon
+        }
         button.contentTintColor = tint
-        button.title = title
+        if button.title != title { button.title = title }
     }
+
+    /// The app icon's speech bubble with a small waveform, as a menu-bar template image.
+    private static let bubble: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+            let body = NSBezierPath(roundedRect: NSRect(x: 1.5, y: 2.5, width: 15, height: 11), xRadius: 3.6, yRadius: 3.6)
+            body.move(to: NSPoint(x: 5.5, y: 13))
+            body.line(to: NSPoint(x: 4.5, y: 16.5))
+            body.line(to: NSPoint(x: 9, y: 13))
+            body.close()
+            NSColor.black.setFill()
+            body.fill()
+            NSGraphicsContext.current?.compositingOperation = .destinationOut
+            for (x, y, h) in [(5.6, 6.0, 4.0), (8.3, 4.6, 6.8), (11.0, 6.6, 2.8)] {
+                NSBezierPath(roundedRect: NSRect(x: x, y: y, width: 1.6, height: h), xRadius: 0.8, yRadius: 0.8).fill()
+            }
+            return true
+        }
+        image.isTemplate = true  // macOS colors it for light and dark menu bars
+        image.accessibilityDescription = "AnyMeet"
+        return image
+    }()
 
     private func showMenu() {
         let menu = NSMenu()
@@ -169,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let recording = if case .recording = state { true } else { false }
         menu.addItem(withTitle: recording ? "Stop Recording" : "Start Recording", action: #selector(clicked), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Meetings…", action: #selector(openMeetings), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Open AnyMeet", action: #selector(openMeetings), keyEquivalent: "o").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit AnyMeet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

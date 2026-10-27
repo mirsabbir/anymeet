@@ -21,7 +21,7 @@ jobs:
           cache-dependency-path: ui/package-lock.json
 
       - name: Build the app
-        run: VERSION="${GITHUB_REF_NAME#v}" recorder-macos/build.sh
+        run: VERSION="${GITHUB_REF_NAME#v}" UPDATE_REPOSITORY="$GITHUB_REPOSITORY" recorder-macos/build.sh
 
       - name: Make the DMG
         run: |
@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
-          dotnet publish recorder-windows -c Release -o publish -p:Version=$version
+          dotnet publish recorder-windows -c Release -o publish -p:Version=$version -p:UpdateRepository=$env:GITHUB_REPOSITORY
           if (-not (Test-Path publish/ui/index.html)) { throw "ui/index.html missing from the build" }
           Compress-Archive -Path publish/* -DestinationPath AnyMeet-Windows-x64.zip
       - uses: actions/upload-artifact@v4

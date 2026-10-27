@@ -29,6 +29,8 @@ sealed class TrayApp : ApplicationContext
     State state { get => state_; set { state_ = value; WebWindow.Emit("recordingChanged"); } }
     string lastMessage { get => lastMessage_; set { lastMessage_ = value; WebWindow.Emit("recordingChanged"); } }
 
+    public bool IsIdle => state == State.Idle;
+
     /// <summary>The Recording shape in ui/src/types.ts.</summary>
     public object Recording => new
     {
@@ -131,7 +133,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(state == State.Recording ? "Stop Recording" : "Start Recording", null, (_, _) => Toggle());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Meetings…", null, (_, _) => WebWindow.ShowMeetings(folder != null ? Path.GetFileName(folder) : null));
+        menu.Items.Add("Open AnyMeet", null, (_, _) => WebWindow.ShowMeetings(folder != null ? Path.GetFileName(folder) : null));
         menu.Items.Add("Settings…", null, (_, _) => WebWindow.ShowSettings());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit AnyMeet", null, async (_, _) =>

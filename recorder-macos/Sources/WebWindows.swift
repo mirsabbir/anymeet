@@ -20,8 +20,8 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         }
     }
 
-    func showMeetings(id: String? = nil) { show("meetings", id: id, title: "Meetings", size: NSSize(width: 1180, height: 760)) }
-    func showSettings() { show("settings", id: nil, title: "Settings", size: NSSize(width: 860, height: 600)) }
+    func showMeetings(id: String? = nil) { show("meetings", id: id, title: "AnyMeet", size: NSSize(width: 1180, height: 760)) }
+    func showSettings() { show("settings", id: nil, title: "AnyMeet Settings", size: NSSize(width: 860, height: 600)) }
 
     private func show(_ view: String, id: String?, title: String, size: NSSize) {
         if let existing = windows[view] {
@@ -91,6 +91,18 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             await AppDelegate.shared?.start()
         case "stopRecording":
             await AppDelegate.shared?.stop(transcribe: Preferences.autoTranscribe)
+        case "checkForUpdate":
+            return await Updater.check(force: p["force"] as? Bool ?? false)
+        case "installUpdate":
+            guard AppDelegate.shared?.recording["state"] as? String == "idle" else { throw BridgeError("stop the recording first") }
+            guard TranscriptionRunner.shared.running.isEmpty else { throw BridgeError("wait until the transcript is finished") }
+            try await Updater.install()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
+        case "deleteMeeting":
+            guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
+            if TranscriptionRunner.shared.running.contains(folder.path) { throw BridgeError("wait until the transcript is finished") }
+            try FileManager.default.trashItem(at: folder, resultingItemURL: nil)  // recoverable from the Trash
+            NotificationCenter.default.post(name: TranscriptionRunner.meetingsChanged, object: nil)
         case "listMeetings":
             return await MeetingStore.list()
         case "getMeeting":

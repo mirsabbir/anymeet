@@ -20,8 +20,8 @@ sealed class WebWindow : Form
     readonly WebView2 web = new() { Dock = DockStyle.Fill };
     readonly string view;
 
-    public static void ShowMeetings(string? id = null) => Show("meetings", id, "Meetings", new Size(1180, 760));
-    public static void ShowSettings() => Show("settings", null, "Settings", new Size(860, 600));
+    public static void ShowMeetings(string? id = null) => Show("meetings", id, "AnyMeet", new Size(1180, 760));
+    public static void ShowSettings() => Show("settings", null, "AnyMeet Settings", new Size(860, 600));
 
     static void Show(string view, string? id, string title, Size size)
     {
@@ -96,6 +96,22 @@ sealed class WebWindow : Form
                 return null;
             case "stopRecording":
                 if (TrayApp.Current != null) await TrayApp.Current.StopAsync(Preferences.AutoTranscribe);
+                return null;
+            case "checkForUpdate":
+                return await Updater.Check(p["force"]?.GetValue<bool>() ?? false);
+            case "installUpdate":
+                if ((TrayApp.Current?.IsIdle ?? true) == false) throw new InvalidOperationException("stop the recording first");
+                if (TranscriptionRunner.AnyRunning) throw new InvalidOperationException("wait until the transcript is finished");
+                await Updater.Install();
+                _ = Task.Delay(300).ContinueWith(_ => TrayApp.Current?.ExitThread(), TaskScheduler.FromCurrentSynchronizationContext());
+                return null;
+            case "deleteMeeting":
+                var meeting = MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found");
+                if (TranscriptionRunner.IsRunning(meeting)) throw new InvalidOperationException("wait until the transcript is finished");
+                // Recoverable from the Recycle Bin.
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(meeting,
+                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                TranscriptionRunner.RaiseMeetingsChanged();
                 return null;
             case "listMeetings":
                 return await Task.Run(MeetingStore.List);

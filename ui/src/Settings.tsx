@@ -2,16 +2,18 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { call, on } from './bridge'
 import { Icon, type IconName } from './icons'
 import type { Settings as SettingsData } from './types'
+import { InstallButton, useUpdate } from './Update'
 
 const TABS: [Tab, string, IconName][] = [
   ['recording', 'Recording', 'record'],
   ['transcription', 'Transcription', 'mic'],
   ['glossary', 'Glossary', 'search'],
+  ['about', 'About & updates', 'refresh'],
 ]
-type Tab = 'recording' | 'transcription' | 'glossary'
+type Tab = 'recording' | 'transcription' | 'glossary' | 'about'
 
-export function Settings() {
-  const [tab, setTab] = useState<Tab>('recording')
+export function Settings({ initialTab }: { initialTab?: string }) {
+  const [tab, setTab] = useState<Tab>(TABS.some(([id]) => id === initialTab) ? (initialTab as Tab) : 'recording')
   const [s, setS] = useState<SettingsData>()
   const load = useCallback(() => { call('getSettings').then(setS) }, [])
   useEffect(() => { load(); return on('settingsChanged', load) }, [load])
@@ -19,6 +21,8 @@ export function Settings() {
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="Settings sections">
+        <a className="tab back" href="#/meetings"><Icon name="back" />Meetings</a>
+        <div className="eyebrow">Settings</div>
         {TABS.map(([id, label, icon]) => (
           <button key={id} className="tab" aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
             <Icon name={icon} />{label}
@@ -29,6 +33,7 @@ export function Settings() {
         {s && tab === 'recording' && <Recording s={s} />}
         {s && tab === 'transcription' && <Transcription s={s} reload={load} />}
         {s && tab === 'glossary' && <Glossary s={s} reload={load} />}
+        {tab === 'about' && <About />}
       </main>
     </div>
   )
@@ -149,6 +154,36 @@ function Glossary({ s, reload }: { s: SettingsData; reload: () => void }) {
         </div>
       )}
       <p className="small muted" style={{ marginTop: 20 }}>{s.glossary.length} term{s.glossary.length === 1 ? '' : 's'}</p>
+    </div>
+  )
+}
+
+function About() {
+  const { info, checking, check } = useUpdate()
+  return (
+    <div className="page">
+      <h1>About & updates</h1>
+      <p>AnyMeet checks GitHub for a new release when it opens and every six hours.</p>
+      <div className="rows">
+        <div className="row">
+          <div className="label"><div>Version</div><div className="small muted">This build</div></div>
+          <div className="value">{info?.current ?? '…'}</div>
+        </div>
+        <div className="row">
+          <div className="label">
+            <div>Latest release</div>
+            <div className="small muted">
+              {checking ? 'Checking…' : info?.error ? `Couldn’t check: ${info.error}` : info?.available ? 'A new version is ready to install' : 'You’re up to date'}
+            </div>
+          </div>
+          <div className="value">{info?.latest ?? '–'}</div>
+        </div>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <div className="label"><div>Update</div><div className="small muted">Downloads the new version, replaces the app and reopens it. Not possible while recording.</div></div>
+          <button className="btn" onClick={() => check(true)} disabled={checking}><Icon name="refresh" />Check now</button>
+          {info?.available && info.latest && <InstallButton version={info.latest} />}
+        </div>
+      </div>
     </div>
   )
 }

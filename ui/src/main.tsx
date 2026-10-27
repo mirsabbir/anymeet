@@ -16,5 +16,5 @@ const [, view, id] = decodeURIComponent(location.hash).split('/')
 document.title = view === 'settings' ? 'Settings' : 'Meetings'
 
 createRoot(document.getElementById('root')!).render(
-  view === 'settings' ? <Settings /> : <Meetings initialId={id} />,
+  view === 'settings' ? <Settings initialTab={id} /> : <Meetings initialId={id} />,
 )
