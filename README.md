@@ -36,6 +36,28 @@ Transcription needs a clone of this repository (the `transcriberProject` path ab
 
 Windows: see [recorder-windows/README.md](recorder-windows/README.md).
 
+## "The app won't open"
+
+AnyMeet is not signed with a paid Apple Developer ID or a Windows code-signing certificate yet, so both systems warn about it the first time. The app is safe to open; the source is all here.
+
+**macOS: "AnyMeet is damaged and can't be opened" or "Apple could not verify AnyMeet"**
+
+Remove the download quarantine flag, then open it again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/AnyMeet.app
+```
+
+Or without Terminal: try to open the app once, then go to **System Settings → Privacy & Security**, scroll down to the message about AnyMeet and click **Open Anyway**.
+
+**macOS: it asks for Screen Recording / Microphone again after an update**
+
+Expected for now: an unsigned app looks like a new app to macOS after every update. Allow it again, then quit and reopen AnyMeet. Old entries for AnyMeet in the Screen Recording list can be removed with **−**.
+
+**Windows: "Windows protected your PC" (SmartScreen)**
+
+Click **More info → Run anyway**. If Windows blocks the zip's files, right-click the downloaded zip → **Properties** → tick **Unblock** → OK, then unzip again.
+
 ## Settings
 
 Nothing personal lives in the code. Each user's settings folder holds:
