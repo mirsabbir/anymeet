@@ -36,6 +36,10 @@ Transcription needs a clone of this repository (the `transcriberProject` path ab
 
 Windows: see [recorder-windows/README.md](recorder-windows/README.md).
 
+## Updates
+
+From v0.3.2 on, AnyMeet checks GitHub Releases when it opens and every six hours. When a new version is out, the Meetings window shows **Update & restart**: it downloads the release, replaces the app and reopens it. Settings → About & updates shows your version and has **Check now**. Updating is blocked while a recording or a transcription is running.
+
 ## "The app won't open"
 
 AnyMeet is not signed with a paid Apple Developer ID or a Windows code-signing certificate yet, so both systems warn about it the first time. The app is safe to open; the source is all here.
