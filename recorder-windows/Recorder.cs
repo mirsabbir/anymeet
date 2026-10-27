@@ -12,7 +12,8 @@ sealed class MeetingCapture
     readonly List<(Recorder recorder, TaskCompletionSource<string?> done)> videos = new();
     AudioTrack? mic, system;
 
-    public void Start(string folder)
+    /// <summary>`live`: also write live/mic.wav and live/system.wav as they record, for live transcription.</summary>
+    public void Start(string folder, bool live)
     {
         Directory.CreateDirectory(folder);
         var displays = Recorder.GetDisplays();
@@ -43,8 +44,8 @@ sealed class MeetingCapture
             videos.Add((recorder, done));
         }
 
-        mic = new AudioTrack(loopback: false, folder, "mic");
-        system = new AudioTrack(loopback: true, folder, "system");
+        mic = new AudioTrack(loopback: false, folder, "mic", live);
+        system = new AudioTrack(loopback: true, folder, "system", live);
         mic.Start();
         system.Start();
     }

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from . import base, pipeline
+from . import base, live, pipeline
 
 AUDIO_EXT = {".m4a", ".mp3", ".wav", ".flac", ".ogg", ".opus", ".aac", ".webm", ".mp4", ".mov"}
 SPEAKERS = {"mic": "Me", "system": "Others"}
@@ -55,14 +55,26 @@ def main() -> None:
     ap.add_argument("path", type=Path)
     ap.add_argument("--glossary", type=Path, default=config_dir() / "glossary.txt")
     ap.add_argument("--transcriber", default=os.environ.get("TRANSCRIBER", base.DEFAULT))
+    ap.add_argument("--live", action="store_true",
+                    help="transcribe <folder>/live/*.wav while they are still being recorded (see live.py)")
     args = ap.parse_args()
 
-    tracks, out = _tracks(args.path.expanduser().resolve())
     transcriber = base.get(args.transcriber)
     glossary = _glossary(args.glossary)
     started = time.monotonic()
+    workers = getattr(transcriber, "max_workers", 8)
+    if args.live:
+        folder = args.path.expanduser().resolve()
+        print(f"{transcriber.name}: live, {len(glossary)} glossary term(s)", flush=True)
+        failed = live.run(folder, SPEAKERS, transcriber, glossary, workers=workers)
+        print(f"live transcript done in {time.monotonic() - started:.0f}s -> {folder / 'transcript'}.md")
+        if failed:
+            print(f"WARNING: {failed} segment(s) could not be transcribed; they are marked ⚠️ in the transcript")
+            sys.exit(1)
+        return
+    tracks, out = _tracks(args.path.expanduser().resolve())
     print(f"{transcriber.name}: {len(tracks)} track(s), {len(glossary)} glossary term(s)")
-    segments, length = pipeline.transcribe_tracks(tracks, transcriber, glossary)
+    segments, length = pipeline.transcribe_tracks(tracks, transcriber, glossary, workers=workers)
     failed = pipeline.write(segments, length, transcriber.name, args.path.stem, out)
     print(f"{len(segments)} segment(s) from {length / 60:.1f} min of audio in "
           f"{time.monotonic() - started:.0f}s -> {out}.md")

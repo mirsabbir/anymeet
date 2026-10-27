@@ -92,7 +92,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         case "startRecording":
             await AppDelegate.shared?.start()
         case "stopRecording":
-            await AppDelegate.shared?.stop(transcribe: Preferences.autoTranscribe)
+            await AppDelegate.shared?.stop()
         case "checkForUpdate":
             return await Updater.check(force: p["force"] as? Bool ?? false)
         case "installUpdate":
@@ -116,8 +116,10 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             try open(p["path"] as? String ?? "")
         case "getSettings":
             return settings()
-        case "setAutoTranscribe":
-            Preferences.autoTranscribe = p["value"] as? Bool ?? true
+        case "setTranscribeMode":
+            let mode = p["mode"] as? String ?? ""
+            guard ["live", "after", "off"].contains(mode) else { throw BridgeError("unknown mode \(mode)") }
+            Preferences.transcribeMode = mode
         case "setTranscriber":
             let id = p["id"] as? String ?? ""
             guard Preferences.transcribers.contains(where: { $0["id"] as? String == id && $0["available"] as? Bool == true })
@@ -149,7 +151,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         }
         return [
             "meetingsFolder": "~/" + Preferences.meetingsRoot.lastPathComponent,
-            "autoTranscribe": Preferences.autoTranscribe,
+            "transcribeMode": Preferences.transcribeMode,
             "transcriber": Preferences.transcriber,
             "transcribers": Preferences.transcribers,
             "apiKeySet": Preferences.apiKeySet,

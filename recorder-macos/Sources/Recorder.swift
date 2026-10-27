@@ -19,7 +19,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
     private var videoFinished = Set<ObjectIdentifier>()
     private var videoErrors: [Error] = []
 
-    func start(in folder: URL) async throws {
+    /// `live`: also write live/mic.wav and live/system.wav as they record, for live transcription.
+    func start(in folder: URL, live: Bool) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let firstDisplay = content.displays.first else { throw RecorderError.noDisplay }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -37,8 +38,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
             streams.append(stream)
         }
 
-        system = AudioFileWriter(url: folder.appending(path: "system.m4a"))
-        mic = AudioFileWriter(url: folder.appending(path: "mic.m4a"))
+        let liveFolder = folder.appending(path: "live")
+        system = AudioFileWriter(url: folder.appending(path: "system.m4a"), live: live ? liveFolder.appending(path: "system.wav") : nil)
+        mic = AudioFileWriter(url: folder.appending(path: "mic.m4a"), live: live ? liveFolder.appending(path: "mic.wav") : nil)
         let audioStream = SCStream(filter: SCContentFilter(display: firstDisplay, excludingWindows: []),
                                    configuration: Self.audioConfig(), delegate: self)
         try audioStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue)

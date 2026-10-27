@@ -21,7 +21,8 @@ final class TranscriptionRunner {
 
     /// Returns false when the transcriber can't run or this folder is already running.
     @discardableResult
-    func start(_ folder: URL, completion: ((Bool) -> Void)? = nil) -> Bool {
+    /// `live`: start while recording; the transcriber follows live/*.wav until live/done appears.
+    func start(_ folder: URL, live: Bool = false, completion: ((Bool) -> Void)? = nil) -> Bool {
         let log = folder.appending(path: "transcribe.log")
         func fail(_ reason: String) -> Bool {
             lastError = reason
@@ -38,7 +39,9 @@ final class TranscriptionRunner {
 
         let process = Process()
         process.executableURL = URL(filePath: uv)
-        process.arguments = ["run", "--project", project, "transcribe", folder.path]
+        // Local models need the optional torch/transformers install; uv adds it on first use.
+        let extra = Preferences.transcriber.hasPrefix("local-") ? ["--extra", "local"] : []
+        process.arguments = ["run", "--project", project] + extra + ["transcribe", folder.path] + (live ? ["--live"] : [])
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = (Self.toolFolders + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
         env["TRANSCRIBER"] = Preferences.transcriber

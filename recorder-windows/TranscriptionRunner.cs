@@ -21,13 +21,14 @@ static class TranscriptionRunner
     public static void RaiseMeetingsChanged() => MeetingsChanged?.Invoke();
 
     /// <summary>Returns false when the transcriber is not set up or this folder is already running.</summary>
-    public static bool Start(string folder, Action<bool>? completion = null)
+    /// <summary>`live`: start while recording; the transcriber follows live/*.wav until live/done appears.</summary>
+    public static bool Start(string folder, bool live = false, Action<bool>? completion = null)
     {
         ui ??= SynchronizationContext.Current;
         if (Preferences.TranscriberProject == null || running.Contains(folder)) return false;
         var info = new ProcessStartInfo("uv")
         {
-            ArgumentList = { "run", "--project", Preferences.TranscriberProject, "transcribe", folder },
+            ArgumentList = { "run", "--project", Preferences.TranscriberProject },
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             StandardOutputEncoding = System.Text.Encoding.UTF8,
@@ -35,6 +36,11 @@ static class TranscriptionRunner
             CreateNoWindow = true,
             UseShellExecute = false,
         };
+        // Local models need the optional torch/transformers install; uv adds it on first use.
+        if (Preferences.Transcriber.StartsWith("local-")) { info.ArgumentList.Add("--extra"); info.ArgumentList.Add("local"); }
+        info.ArgumentList.Add("transcribe");
+        info.ArgumentList.Add(folder);
+        if (live) info.ArgumentList.Add("--live");
         info.Environment["TRANSCRIBER"] = Preferences.Transcriber;
         info.Environment["PYTHONIOENCODING"] = "utf-8";  // the log has Bangla text
         info.Environment["PYTHONUNBUFFERED"] = "1";  // write transcribe.log as it goes

@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var state = State.idle { didSet { render(); NotificationCenter.default.post(name: Self.recordingChanged, object: nil) } }
     private var folder: URL?
+    /// The transcription mode captured when this recording started.
+    private var liveRun = false
     private var lastMessage = "Ready" { didSet { NotificationCenter.default.post(name: Self.recordingChanged, object: nil) } }
     private var ticker: Timer?
 
@@ -43,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 guard let self, case .recording = self.state else { return }  // the other stream reporting in
                 Task { @MainActor in
-                    await self.stop(transcribe: Preferences.autoTranscribe)
+                    await self.stop()
                     self.notify("Recording stopped", Self.stopReason(error))
                 }
             }
@@ -89,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if NSApp.currentEvent?.type == .rightMouseDown { showMenu(); return }
         switch state {
         case .idle: Task { @MainActor in await start() }
-        case .recording: Task { @MainActor in await stop(transcribe: Preferences.autoTranscribe) }
+        case .recording: Task { @MainActor in await stop() }
         case .starting, .stopping: break
         }
     }
@@ -102,19 +104,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let name = DateFormatter.folderName.string(from: Date())
         let folder = Preferences.meetingsRoot.appending(path: name)
         state = .starting
+        let live = Preferences.transcribeMode == "live"
         do {
-            try await recorder.start(in: folder)
+            try await recorder.start(in: folder, live: live)
             self.folder = folder
             lastMessage = "Recording"
             state = .recording(Date())
             ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.render() }
+            liveRun = live && TranscriptionRunner.shared.start(folder, live: true) { [weak self] ok in
+                self?.transcriptFinished(ok, folder)
+            }
+            if live && !liveRun { lastMessage = "Recording · ⚠️ Can't transcribe live: \(TranscriptionRunner.shared.lastError)" }
         } catch {
             lastMessage = "⚠️ Couldn't start: \(error.localizedDescription)"
             state = .idle
         }
     }
 
-    @MainActor func stop(transcribe: Bool) async {
+    /// Stops recording. In live mode the transcriber is already running and is told the
+    /// recording is over; in "after" mode it starts now; `transcribe: false` skips that.
+    @MainActor func stop(transcribe: Bool = true) async {
         guard case .recording = state else { return }
         state = .stopping
         ticker?.invalidate()
@@ -128,13 +137,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             lastMessage = "Saved \(folder.lastPathComponent)"
         }
-        guard transcribe else { return }
-        let started = TranscriptionRunner.shared.start(folder) { [weak self] ok in
-            self?.lastMessage = ok ? "Transcript ready: \(folder.lastPathComponent)" : "⚠️ Transcription problem, see transcribe.log"
-            self?.notify(ok ? "Transcript ready" : "Transcription problem", folder.lastPathComponent)
-            self?.render()
+        if liveRun {
+            // The audio files are closed; this tells the live transcriber to finish.
+            FileManager.default.createFile(atPath: folder.appending(path: "live/done").path, contents: nil)
+            liveRun = false
+            lastMessage = "Finishing the live transcript"
+        } else if transcribe && Preferences.transcribeMode == "after" {
+            let started = TranscriptionRunner.shared.start(folder) { [weak self] ok in self?.transcriptFinished(ok, folder) }
+            lastMessage = started ? "Transcribing \(folder.lastPathComponent)" : "⚠️ Can't transcribe: \(TranscriptionRunner.shared.lastError)"
         }
-        lastMessage = started ? "Transcribing \(folder.lastPathComponent)" : "⚠️ Can't transcribe: \(TranscriptionRunner.shared.lastError)"
+        render()
+    }
+
+    @MainActor private func transcriptFinished(_ ok: Bool, _ folder: URL) {
+        lastMessage = ok ? "Transcript ready: \(folder.lastPathComponent)" : "⚠️ Transcription problem, see the meeting page"
+        notify(ok ? "Transcript ready" : "Transcription problem", folder.lastPathComponent)
         render()
     }
 

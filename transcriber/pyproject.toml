@@ -6,6 +6,15 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
     "google-genai>=2.33",
     "python-dotenv>=1.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Local Whisper models (local-whisper-*); large, so only installed when chosen.
+local = [
+    "torch>=2.5",
+    "transformers>=4.45",
+    "accelerate>=1.0",
 ]
 
 [project.scripts]

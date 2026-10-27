@@ -20,6 +20,7 @@ sealed class TrayApp : ApplicationContext
     State state_ = State.Idle;
     DateTime startedAt;
     string? folder;
+    bool liveRun;  // the transcription mode captured when this recording started
     string lastMessage_ = "Ready";
 
     /// <summary>Set at startup so the Meetings window can start and stop recordings too.</summary>
@@ -54,7 +55,7 @@ sealed class TrayApp : ApplicationContext
     async void Toggle()
     {
         if (state == State.Idle) await StartAsync();
-        else if (state == State.Recording) await StopAsync(Preferences.AutoTranscribe);
+        else if (state == State.Recording) await StopAsync();
     }
 
     public async Task StartAsync()
@@ -65,11 +66,15 @@ sealed class TrayApp : ApplicationContext
         Render();
         try
         {
-            await Task.Run(() => capture.Start(folder));
+            var live = Preferences.TranscribeMode == "live";
+            await Task.Run(() => capture.Start(folder, live));
             startedAt = DateTime.Now;
             state = State.Recording;
             lastMessage = "Recording";
             ticker.Start();
+            var meeting = folder;
+            liveRun = live && TranscriptionRunner.Start(meeting, live: true, completion: ok => TranscriptFinished(ok, meeting));
+            if (live && !liveRun) lastMessage = "Recording · ⚠️ Can't transcribe live (is uv installed?)";
         }
         catch (Exception e)
         {
@@ -81,7 +86,11 @@ sealed class TrayApp : ApplicationContext
         Render();
     }
 
-    public async Task StopAsync(bool transcribe)
+    /// <summary>
+    /// Stops recording. In live mode the transcriber is already running and is told the
+    /// recording is over; in "after" mode it starts now; `transcribe: false` skips that.
+    /// </summary>
+    public async Task StopAsync(bool transcribe = true)
     {
         if (state != State.Recording) return;
         state = State.Stopping;
@@ -100,16 +109,26 @@ sealed class TrayApp : ApplicationContext
         {
             lastMessage = $"Saved {name}";
         }
-        if (transcribe)
+        if (liveRun)
         {
-            var started = TranscriptionRunner.Start(folder!, ok =>
-            {
-                lastMessage = ok ? $"Transcript ready: {name}" : "⚠️ Transcription problem, see transcribe.log";
-                tray.ShowBalloonTip(5000, ok ? "Transcript ready" : "Transcription problem", name, ok ? ToolTipIcon.Info : ToolTipIcon.Warning);
-                Render();
-            });
+            File.Create(Path.Combine(folder!, "live", "done")).Dispose();  // files are closed: the live run can finish
+            liveRun = false;
+            lastMessage = "Finishing the live transcript";
+        }
+        else if (transcribe && Preferences.TranscribeMode == "after")
+        {
+            var meeting = folder!;
+            var started = TranscriptionRunner.Start(meeting, completion: ok => TranscriptFinished(ok, meeting));
             lastMessage = started ? $"Transcribing {name}" : "⚠️ Couldn't start the transcriber (is uv installed?)";
         }
+        Render();
+    }
+
+    void TranscriptFinished(bool ok, string meeting)
+    {
+        var name = Path.GetFileName(meeting);
+        lastMessage = ok ? $"Transcript ready: {name}" : "⚠️ Transcription problem, see the meeting page";
+        tray.ShowBalloonTip(5000, ok ? "Transcript ready" : "Transcription problem", name, ok ? ToolTipIcon.Info : ToolTipIcon.Warning);
         Render();
     }
 

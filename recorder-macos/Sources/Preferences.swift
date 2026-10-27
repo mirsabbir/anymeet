@@ -16,16 +16,19 @@ enum Preferences {
     }()
 
     static let transcribers: [[String: Any]] = [
-        ["id": "gemini-3.5-transcribe", "name": "Gemini 3.5 Transcribe", "note": "Tested on our Bangla audio · ~$0.35/hour", "available": true],
-        ["id": "soniox", "name": "Soniox", "note": "Not added yet", "available": false],
-        ["id": "sarvam", "name": "Sarvam", "note": "Not added yet", "available": false],
-        ["id": "local-whisper", "name": "Local Whisper", "note": "Not added yet", "available": false],
+        ["id": "gemini-3.5-transcribe", "name": "Gemini 3.5 Transcribe", "note": "Tested on our Bangla audio · ~$0.35/hour", "available": true, "needsKey": true],
+        ["id": "local-whisper-bangla", "name": "Local Whisper (Bangla)", "note": "On this Mac, free, offline · Bangla-tuned · first use downloads ~1.5 GB", "available": true, "needsKey": false],
+        ["id": "soniox", "name": "Soniox", "note": "Not added yet", "available": false, "needsKey": true],
     ]
     static let keyName = "GEMINI_API_KEY"  // the only available transcriber's key
 
-    static var autoTranscribe: Bool {
-        get { UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "autoTranscribe") }
+    /// When to transcribe: "live" (while recording), "after" (when recording stops) or "off".
+    static var transcribeMode: String {
+        get {
+            if let mode = UserDefaults.standard.string(forKey: "transcribeMode") { return mode }
+            return UserDefaults.standard.object(forKey: "autoTranscribe") as? Bool == false ? "off" : "live"
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "transcribeMode") }
     }
 
     static var transcriber: String {

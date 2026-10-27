@@ -23,7 +23,9 @@ export function Meetings({ initialId }: { initialId?: string }) {
   const [selected, setSelected] = useState<string | undefined>(initialId)
   const [query, setQuery] = useState('')
   const [keyMissing, setKeyMissing] = useState(false)
-  useEffect(() => { call('getSettings').then((s) => setKeyMissing(!s.apiKeySet)) }, [])
+  useEffect(() => {
+    call('getSettings').then((s) => setKeyMissing(!s.apiKeySet && !!s.transcribers.find((t) => t.id === s.transcriber)?.needsKey))
+  }, [])
 
   const refresh = useCallback(() => {
     call('listMeetings').then((items) => {
@@ -94,6 +96,13 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
 
   const load = useCallback(() => { call('getMeeting', { id }).then(setMeeting) }, [id])
   useEffect(() => { load(); return on('meetingsChanged', load) }, [load])
+  // While a transcript is being written (live during a recording, or after it), show it as it grows.
+  const growing = meeting?.status === 'transcribing'
+  useEffect(() => {
+    if (!growing) return
+    const timer = setInterval(load, 3000)
+    return () => clearInterval(timer)
+  }, [growing, load])
   if (!meeting) return null
 
   const failed = meeting.segments.filter((s) => s.failed).length
@@ -161,8 +170,8 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
 }
 
 function Transcript({ meeting, query, onTranscribe }: { meeting: Meeting; query: string; onTranscribe: () => void }) {
-  if (meeting.status === 'transcribing') {
-    return <div className="empty"><div className="spinner" /><h2>Transcribing…</h2><p>A one-hour meeting usually takes a minute or two.</p></div>
+  if (meeting.status === 'transcribing' && meeting.segments.length === 0) {
+    return <div className="empty"><div className="spinner" /><h2>Transcribing…</h2><p>Text shows up here as each part is done.</p></div>
   }
   if (meeting.segments.length === 0) {
     return (
@@ -177,6 +186,7 @@ function Transcript({ meeting, query, onTranscribe }: { meeting: Meeting; query:
   return (
     <section className="transcript" aria-label="Transcript">
       {meeting.segments.map((s, i) => <SegmentRow key={i} s={s} query={query} onRetry={onTranscribe} />)}
+      {meeting.status === 'transcribing' && <p className="live-note small muted"><span className="spinner small-spinner" />Transcribing… new text appears as each part is done</p>}
     </section>
   )
 }

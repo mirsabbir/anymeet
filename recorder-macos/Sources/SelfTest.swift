@@ -5,7 +5,7 @@ import WebKit
 /// What the app records with: ScreenCaptureKit normally, a fake for the self-test.
 protocol Capture: AnyObject {
     var onStreamError: ((Error) -> Void)? { get set }
-    func start(in folder: URL) async throws
+    func start(in folder: URL, live: Bool) async throws
     func stop() async -> [String]
     /// Report a stop that came from macOS rather than from AnyMeet (self-test only).
     func simulateSystemStop() async
@@ -18,10 +18,37 @@ extension Recorder: Capture {}
 final class FakeCapture: Capture {
     var onStreamError: ((Error) -> Void)?
     private var folder: URL?
+    private var feeder: Task<Void, Never>?
+    private let speech = FileManager.default.temporaryDirectory.appending(path: "anymeet-selftest-speech.wav")
 
-    func start(in folder: URL) async throws {
+    func start(in folder: URL, live: Bool) async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         self.folder = folder
+        let say = Process()
+        say.executableURL = URL(filePath: "/usr/bin/say")
+        say.arguments = ["--file-format=WAVE", "--data-format=LEI16@16000", "-o", speech.path,
+                         "Hello, this is an AnyMeet self test. We deploy the API next quarter."]
+        try say.run()
+        say.waitUntilExit()
+        guard live else { return }
+        // Feed live/mic.wav at real-time pace (16 kHz × 2 bytes), then keep adding
+        // silence, like a microphone in a quiet room, until the recording stops.
+        let target = folder.appending(path: "live/mic.wav")
+        let audio = (try? Data(contentsOf: speech)) ?? Data()
+        feeder = Task.detached {
+            try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: target.path, contents: nil)
+            guard let out = try? FileHandle(forWritingTo: target) else { return }
+            defer { try? out.close() }
+            let step = 6_400  // 0.2 s
+            var offset = 0
+            while !Task.isCancelled {
+                let piece = offset < audio.count ? audio[offset..<min(offset + step, audio.count)] : Data(count: step)
+                out.write(piece)
+                offset += step
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+        }
     }
 
     func simulateSystemStop() async {
@@ -30,13 +57,10 @@ final class FakeCapture: Capture {
 
     func stop() async -> [String] {
         guard let folder else { return ["no folder"] }
-        let say = Process()
-        say.executableURL = URL(filePath: "/usr/bin/say")
-        say.arguments = ["--file-format=WAVE", "--data-format=LEI16@16000", "-o", folder.appending(path: "mic.wav").path,
-                         "Hello, this is an AnyMeet self test. We deploy the API next quarter."]
-        try? say.run()
-        say.waitUntilExit()
-        return say.terminationStatus == 0 ? [] : ["say failed"]
+        feeder?.cancel()
+        await feeder?.value
+        do { try FileManager.default.copyItem(at: speech, to: folder.appending(path: "mic.wav")) } catch { return ["\(error)"] }
+        return []
     }
 }
 
@@ -64,6 +88,9 @@ enum SelfTest {
             while !done() && Date() < deadline { try? await Task.sleep(for: .milliseconds(200)) }
             return done()
         }
+
+        let savedMode = UserDefaults.standard.string(forKey: "transcribeMode")  // nil = never set; restore exactly
+        Preferences.transcribeMode = "after"  // steps 2-4 cover transcribing after the meeting
 
         // 1. Menu bar while idle.
         var look = app.menuBarLook()
@@ -103,8 +130,7 @@ enum SelfTest {
 
         // 5. macOS stops the capture (the system indicator's Stop): AnyMeet must stop fully too.
         //    Transcription is off here: step 4 already covered it, and it saves a Gemini call.
-        let autoTranscribe = Preferences.autoTranscribe
-        Preferences.autoTranscribe = false
+        Preferences.transcribeMode = "off"
         app.simulateStatusItemClick()
         if await wait(10, until: { app.isRecording }) {
             try? await Task.sleep(for: .seconds(2))
@@ -122,9 +148,34 @@ enum SelfTest {
         } else {
             check("second recording started", false)
         }
-        Preferences.autoTranscribe = autoTranscribe
 
-        // 6. Paste into the API key field with Cmd+V, and copy from the page.
+        // 6. Live transcription: text must appear while still recording, and the run
+        //    must finish cleanly after Stop.
+        Preferences.transcribeMode = "live"
+        app.simulateStatusItemClick()
+        if await wait(10, until: { app.isRecording }), let liveFolder = app.currentFolder {
+            let transcript = liveFolder.appending(path: "transcript.json")
+            check("live: transcriber starts with the recording", !TranscriptionRunner.shared.running.isEmpty,
+                  app.recording["message"] as? String ?? "")
+            let early = await wait(45) { FileManager.default.fileExists(atPath: transcript.path) }
+            check("live: transcript appears while still recording", early && app.isRecording,
+                  early ? "recording: \(app.isRecording)" : "no transcript.json after 45 s")
+            app.simulateStatusItemClick()
+            _ = await wait(30) { app.recording["state"] as? String == "idle" }
+            let finished = await wait(180) { TranscriptionRunner.shared.running.isEmpty }
+            look = app.menuBarLook()
+            let log = (try? String(contentsOf: liveFolder.appending(path: "transcribe.log"), encoding: .utf8)) ?? ""
+            check("live: finishes after Stop", finished && !log.contains("Traceback"), String(log.split(separator: "\n").last ?? ""))
+            check("live: live/ folder cleaned up", !FileManager.default.fileExists(atPath: liveFolder.appending(path: "live").path))
+            check("live: icon back to idle", look.icon == "bubble" && !look.red && look.title.isEmpty, "\(look)")
+            try? FileManager.default.removeItem(at: liveFolder)
+        } else {
+            check("live: recording started", false)
+        }
+        if let savedMode { Preferences.transcribeMode = savedMode } else { UserDefaults.standard.removeObject(forKey: "transcribeMode") }
+        try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appending(path: "anymeet-selftest-speech.wav"))
+
+        // 7. Paste into the API key field with Cmd+V, and copy from the page.
         let pasteboard = NSPasteboard.general
         let saved = pasteboard.string(forType: .string)
         WebWindows.shared.showSettings(tab: "transcription")

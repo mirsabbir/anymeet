@@ -95,7 +95,7 @@ sealed class WebWindow : Form
                 if (TrayApp.Current != null) await TrayApp.Current.StartAsync();
                 return null;
             case "stopRecording":
-                if (TrayApp.Current != null) await TrayApp.Current.StopAsync(Preferences.AutoTranscribe);
+                if (TrayApp.Current != null) await TrayApp.Current.StopAsync();
                 return null;
             case "checkForUpdate":
                 return await Updater.Check(p["force"]?.GetValue<bool>() ?? false);
@@ -126,11 +126,11 @@ sealed class WebWindow : Form
                 return null;
             case "getSettings":
                 return Settings();
-            case "setAutoTranscribe":
-                Preferences.AutoTranscribe = p["value"]?.GetValue<bool>() ?? true;
+            case "setTranscribeMode":
+                Preferences.TranscribeMode = Str("mode") is "live" or "after" or "off" ? Str("mode") : throw new InvalidOperationException("unknown mode");
                 return null;
             case "setTranscriber":
-                Preferences.Transcriber = Str("id") == "gemini-3.5-transcribe" ? Str("id") : throw new InvalidOperationException("transcriber not available");
+                Preferences.Transcriber = Preferences.AvailableTranscribers.Contains(Str("id")) ? Str("id") : throw new InvalidOperationException("transcriber not available");
                 return null;
             case "setApiKey":
                 Preferences.SetApiKey(Str("key"));
@@ -161,7 +161,7 @@ sealed class WebWindow : Form
         return new
         {
             meetingsFolder = Preferences.MeetingsRoot,
-            autoTranscribe = Preferences.AutoTranscribe,
+            transcribeMode = Preferences.TranscribeMode,
             transcriber = Preferences.Transcriber,
             transcribers = Preferences.Transcribers,
             apiKeySet = Preferences.ApiKeySet,

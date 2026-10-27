@@ -41,11 +41,15 @@ export interface Transcriber {
   name: string
   note: string
   available: boolean
+  needsKey: boolean // false for local models
 }
+
+/** live: while recording · after: when recording stops · off: only by hand */
+export type TranscribeMode = 'live' | 'after' | 'off'
 
 export interface Settings {
   meetingsFolder: string
-  autoTranscribe: boolean
+  transcribeMode: TranscribeMode
   transcriber: string
   transcribers: Transcriber[]
   apiKeySet: boolean
@@ -81,7 +85,7 @@ export interface HostApi {
   deleteMeeting(p: { id: string }): void // moves the folder to the Trash / Recycle Bin
   openPath(p: { path: string }): void
   getSettings(): Settings
-  setAutoTranscribe(p: { value: boolean }): void
+  setTranscribeMode(p: { mode: TranscribeMode }): void
   setTranscriber(p: { id: string }): void
   setApiKey(p: { key: string }): void
   setGlossary(p: { terms: string[] }): void

@@ -20,9 +20,19 @@ def _gemini_35() -> Transcriber:
     return GeminiTranscriber("gemini-3.5-transcribe")
 
 
+def _local(name: str, model: str, base: str | None = None) -> Callable[[], Transcriber]:
+    def make() -> Transcriber:
+        from .local_whisper import LocalWhisperTranscriber
+
+        return LocalWhisperTranscriber(name, model, base)
+    return make
+
+
 # Imports stay inside the factories so only the chosen provider's SDK loads.
 TRANSCRIBERS: dict[str, Callable[[], Transcriber]] = {
     "gemini-3.5-transcribe": _gemini_35,
+    # Bangla fine-tune of Whisper-medium; best local model in benchmark/.
+    "local-whisper-bangla": _local("local-whisper-bangla", "bengaliAI/tugstugi_bengaliai-asr_whisper-medium", "openai/whisper-medium"),
 }
 DEFAULT = "gemini-3.5-transcribe"
 

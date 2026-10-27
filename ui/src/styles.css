@@ -138,6 +138,13 @@ a.tab { color: var(--ink); text-decoration: none; }
 .btn.danger:hover { background: #A92A2F; }
 .confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-radius: 12px; background: #FDECEC; color: #9F1D22; font-size: 13px; font-weight: 500; }
 
+.live-note { display: flex; align-items: center; gap: 8px; margin: 0; }
+.small-spinner { width: 14px; height: 14px; border-width: 2px; }
+.modes { display: flex; flex-direction: column; gap: 6px; flex: 1 1 320px; }
+.mode { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid #E4E4E0; background: var(--surface); }
+.mode[aria-checked='true'] { border: 2px solid var(--accent); padding: 9px 11px; }
+.mode-title { font-weight: 600; }
+
 /* Settings */
 .tab { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; font-weight: 500; }
 .tab:hover { background: #EDEDE9; }

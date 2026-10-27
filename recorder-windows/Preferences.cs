@@ -34,15 +34,16 @@ static class Preferences
     }
     const string KeyName = "GEMINI_API_KEY";  // the only available transcriber's key
 
+    public static readonly string[] AvailableTranscribers = { "gemini-3.5-transcribe", "local-whisper-bangla" };
+
     public static readonly object[] Transcribers =
     {
-        new { id = "gemini-3.5-transcribe", name = "Gemini 3.5 Transcribe", note = "Tested on our Bangla audio · ~$0.35/hour", available = true },
-        new { id = "soniox", name = "Soniox", note = "Not added yet", available = false },
-        new { id = "sarvam", name = "Sarvam", note = "Not added yet", available = false },
-        new { id = "local-whisper", name = "Local Whisper", note = "Not added yet", available = false },
+        new { id = "gemini-3.5-transcribe", name = "Gemini 3.5 Transcribe", note = "Tested on our Bangla audio · ~$0.35/hour", available = true, needsKey = true },
+        new { id = "local-whisper-bangla", name = "Local Whisper (Bangla)", note = "On this PC, free, offline · Bangla-tuned · first use downloads ~1.5 GB", available = true, needsKey = false },
+        new { id = "soniox", name = "Soniox", note = "Not added yet", available = false, needsKey = true },
     };
 
-    record Stored(bool AutoTranscribe = true, string Transcriber = "gemini-3.5-transcribe");
+    record Stored(bool AutoTranscribe = true, string Transcriber = "gemini-3.5-transcribe", string? TranscribeMode = null);
 
     static readonly string SettingsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AnyMeet", "settings.json");
 
@@ -58,10 +59,11 @@ static class Preferences
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(s));
     }
 
-    public static bool AutoTranscribe
+    /// <summary>When to transcribe: "live" (while recording), "after" (when recording stops) or "off".</summary>
+    public static string TranscribeMode
     {
-        get => Load().AutoTranscribe;
-        set => Save(Load() with { AutoTranscribe = value });
+        get { var s = Load(); return s.TranscribeMode ?? (s.AutoTranscribe ? "live" : "off"); }
+        set => Save(Load() with { TranscribeMode = value });
     }
 
     public static string Transcriber

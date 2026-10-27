@@ -29,13 +29,12 @@ const meetings = [fresh, road]
 
 const settings: Settings = {
   meetingsFolder: '~/Meetings',
-  autoTranscribe: true,
+  transcribeMode: 'live',
   transcriber: 'gemini-3.5-transcribe',
   transcribers: [
-    { id: 'gemini-3.5-transcribe', name: 'Gemini 3.5 Transcribe', note: 'Tested on our Bangla audio · ~$0.35/hour', available: true },
-    { id: 'soniox', name: 'Soniox', note: 'Not added yet', available: false },
-    { id: 'sarvam', name: 'Sarvam', note: 'Not added yet', available: false },
-    { id: 'local-whisper', name: 'Local Whisper', note: 'Not added yet', available: false },
+    { id: 'gemini-3.5-transcribe', name: 'Gemini 3.5 Transcribe', note: 'Tested on our Bangla audio · ~$0.35/hour', available: true, needsKey: true },
+    { id: 'local-whisper-bangla', name: 'Local Whisper (Bangla)', note: 'On this Mac, free, offline · Bangla-tuned · first use downloads ~1.5 GB', available: true, needsKey: false },
+    { id: 'soniox', name: 'Soniox', note: 'Not added yet', available: false, needsKey: true },
   ],
   apiKeySet: true,
   glossary: ['API', 'deploy', 'sprint', 'release plan'],
@@ -57,7 +56,7 @@ export async function mockHost(method: keyof HostApi, params: unknown): Promise<
     case 'getMeeting': return meetings.find((m) => m.id === p.id)
     case 'deleteMeeting': meetings.splice(meetings.findIndex((m) => m.id === p.id), 1); return
     case 'getSettings': return { ...settings }
-    case 'setAutoTranscribe': settings.autoTranscribe = p.value as boolean; return
+    case 'setTranscribeMode': settings.transcribeMode = p.mode as Settings['transcribeMode']; return
     case 'setTranscriber': settings.transcriber = p.id as string; return
     case 'setApiKey': settings.apiKeySet = Boolean(p.key); return
     case 'setGlossary': settings.glossary = p.terms as string[]; return

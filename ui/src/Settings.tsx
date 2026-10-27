@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { call, on } from './bridge'
 import { Icon, type IconName } from './icons'
-import type { Settings as SettingsData } from './types'
+import type { Settings as SettingsData, TranscribeMode } from './types'
 import { InstallButton, useUpdate } from './Update'
 
 const TABS: [Tab, string, IconName][] = [
@@ -9,6 +9,11 @@ const TABS: [Tab, string, IconName][] = [
   ['transcription', 'Transcription', 'mic'],
   ['glossary', 'Glossary', 'search'],
   ['about', 'About & updates', 'refresh'],
+]
+const MODES: [TranscribeMode, string, string][] = [
+  ['live', 'Live, while recording', 'Text appears during the meeting; the transcript is ready seconds after you stop'],
+  ['after', 'After the meeting', 'The whole recording is transcribed when you stop'],
+  ['off', 'Off', 'Transcribe later from the meeting page'],
 ]
 type Tab = 'recording' | 'transcription' | 'glossary' | 'about'
 
@@ -97,6 +102,8 @@ function Transcription({ s, reload }: { s: SettingsData; reload: () => void }) {
         ))}
       </div>
 
+      {current?.needsKey && (
+        <>
       <form onSubmit={saveKey}>
         <label htmlFor="key" style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>{current?.name ?? 'Model'} API key</label>
         <div className="field">
@@ -109,11 +116,20 @@ function Transcription({ s, reload }: { s: SettingsData; reload: () => void }) {
         : s.apiKeySet ? <div className="note ok">A key is saved on this computer.</div>
         : <div className="note bad">No key yet. Recordings are kept, but they can’t be transcribed.</div>}
 
+        </>
+      )}
       <div className="rows">
-        <div className="row">
-          <div className="label"><div>Transcribe after each recording</div><div className="small muted">When off, transcribe from the Meetings window</div></div>
-          <button className="switch" role="switch" aria-checked={s.autoTranscribe} aria-label="Transcribe after each recording"
-            onClick={() => call('setAutoTranscribe', { value: !s.autoTranscribe }).then(reload)} />
+        <div className="row" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div className="label"><div>When to transcribe</div><div className="small muted">Works with every model above</div></div>
+          <div className="modes" role="radiogroup" aria-label="When to transcribe">
+            {MODES.map(([mode, title, note]) => (
+              <button key={mode} role="radio" aria-checked={s.transcribeMode === mode} className="mode"
+                onClick={() => call('setTranscribeMode', { mode }).then(reload)}>
+                <span className="mode-title">{title}</span>
+                <span className="small muted">{note}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="row">
           <div className="label"><div>Languages</div><div className="small muted">Switching language mid-sentence is fine</div></div>
