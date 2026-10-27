@@ -42,6 +42,7 @@ final class TranscriptionRunner {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = (Self.toolFolders + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
         env["TRANSCRIBER"] = Preferences.transcriber
+        env["PYTHONUNBUFFERED"] = "1"  // write transcribe.log as it goes, not only at the end
         process.environment = env
         FileManager.default.createFile(atPath: log.path, contents: nil)
         if let handle = try? FileHandle(forWritingTo: log) {

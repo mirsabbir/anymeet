@@ -37,6 +37,7 @@ static class TranscriptionRunner
         };
         info.Environment["TRANSCRIBER"] = Preferences.Transcriber;
         info.Environment["PYTHONIOENCODING"] = "utf-8";  // the log has Bangla text
+        info.Environment["PYTHONUNBUFFERED"] = "1";  // write transcribe.log as it goes
 
         var log = new StreamWriter(Path.Combine(folder, "transcribe.log")) { AutoFlush = true };
         var process = new Process { StartInfo = info };

@@ -36,8 +36,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // press and release made macOS drop the click (Stop did nothing).
         statusItem.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
         statusItem.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        // macOS can stop a capture on its own: the user clicks the system's screen-recording
+        // indicator in the menu bar, or a display goes away. Treat that as a full Stop, so
+        // the files are closed and transcribed instead of the app still showing "recording".
         recorder.onStreamError = { [weak self] error in
-            DispatchQueue.main.async { self?.lastMessage = "⚠️ Recording stopped: \(error.localizedDescription)"; self?.render() }
+            DispatchQueue.main.async {
+                guard let self, case .recording = self.state else { return }  // the other stream reporting in
+                Task { @MainActor in
+                    await self.stop(transcribe: Preferences.autoTranscribe)
+                    self.notify("Recording stopped", Self.stopReason(error))
+                }
+            }
         }
         NotificationCenter.default.addObserver(forName: TranscriptionRunner.meetingsChanged, object: nil, queue: .main) { [weak self] _ in
             self?.render()
@@ -129,6 +138,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         render()
     }
 
+    private static func stopReason(_ error: Error) -> String {
+        let e = error as NSError
+        if e.domain == SCStreamErrorDomain, e.code == SCStreamError.Code.userStopped.rawValue {
+            return "Stopped from the macOS menu bar. The recording is saved."
+        }
+        return "macOS stopped the capture (\(error.localizedDescription)). The recording is saved."
+    }
+
     @MainActor private func permissionsGranted() async -> Bool {
         if SelfTest.fakeCapture { return true }  // the fake records nothing from the screen
         if !CGPreflightScreenCaptureAccess() {
@@ -203,6 +220,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func menuBarLook() -> (icon: String, red: Bool, title: String) {
         (shownIcon, statusItem.button?.contentTintColor == .systemRed, statusItem.button?.title ?? "")
     }
+
+    /// Makes the capture report that macOS stopped it, like the system indicator's Stop.
+    func simulateSystemStop() async { await recorder.simulateSystemStop() }
 
     /// Sends the status item's action the way a left click does.
     func simulateStatusItemClick() {

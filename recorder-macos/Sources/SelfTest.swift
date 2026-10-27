@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 import WebKit
 
 /// What the app records with: ScreenCaptureKit normally, a fake for the self-test.
@@ -6,6 +7,8 @@ protocol Capture: AnyObject {
     var onStreamError: ((Error) -> Void)? { get set }
     func start(in folder: URL) async throws
     func stop() async -> [String]
+    /// Report a stop that came from macOS rather than from AnyMeet (self-test only).
+    func simulateSystemStop() async
 }
 
 extension Recorder: Capture {}
@@ -19,6 +22,10 @@ final class FakeCapture: Capture {
     func start(in folder: URL) async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         self.folder = folder
+    }
+
+    func simulateSystemStop() async {
+        onStreamError?(NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.userStopped.rawValue))
     }
 
     func stop() async -> [String] {
@@ -94,7 +101,30 @@ enum SelfTest {
             try? FileManager.default.removeItem(at: folder)
         }
 
-        // 5. Paste into the API key field with Cmd+V, and copy from the page.
+        // 5. macOS stops the capture (the system indicator's Stop): AnyMeet must stop fully too.
+        //    Transcription is off here: step 4 already covered it, and it saves a Gemini call.
+        let autoTranscribe = Preferences.autoTranscribe
+        Preferences.autoTranscribe = false
+        app.simulateStatusItemClick()
+        if await wait(10, until: { app.isRecording }) {
+            try? await Task.sleep(for: .seconds(2))
+            let systemFolder = app.currentFolder
+            await app.simulateSystemStop()
+            let stoppedBySystem = await wait(30) { app.recording["state"] as? String == "idle" }
+            look = app.menuBarLook()
+            check("macOS stop: AnyMeet stops too", stoppedBySystem, app.recording["message"] as? String ?? "")
+            check("macOS stop: no red icon, no timer", !look.red && look.title.isEmpty, "\(look)")
+            if let systemFolder {
+                let names = (try? FileManager.default.contentsOfDirectory(atPath: systemFolder.path)) ?? []
+                check("macOS stop: the recording is saved", names.contains { $0.hasPrefix("mic.") }, names.joined(separator: ", "))
+                try? FileManager.default.removeItem(at: systemFolder)
+            }
+        } else {
+            check("second recording started", false)
+        }
+        Preferences.autoTranscribe = autoTranscribe
+
+        // 6. Paste into the API key field with Cmd+V, and copy from the page.
         let pasteboard = NSPasteboard.general
         let saved = pasteboard.string(forType: .string)
         WebWindows.shared.showSettings(tab: "transcription")

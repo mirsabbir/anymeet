@@ -119,6 +119,14 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
         onStreamError?(error)
     }
 
+    /// Self-test: stops the first display's stream and reports it the way macOS does when
+    /// the user clicks Stop on the system's screen-recording indicator.
+    func simulateSystemStop() async {
+        guard let first = streams.first else { return }
+        try? await first.stopCapture()
+        stream(first, didStopWithError: SCStreamError(.userStopped))
+    }
+
     func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
         markVideoDone(recordingOutput, error: nil)
     }
