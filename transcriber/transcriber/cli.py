@@ -10,6 +10,7 @@ any other audio file is labelled with its own name. Output goes next to the
 input: <file>.transcript.md/.json, or transcript.md/.json inside the folder."""
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -52,7 +53,7 @@ def _glossary(path: Path) -> list[str]:
 
 def _progress_printer(every: float = 0.25):
     """{"done": bytes, "total": bytes} lines for the apps, at most every `every` seconds, plus the last one."""
-    last = 0.0
+    last = -math.inf  # the first line always prints, however recently the machine booted
 
     def report(done: int, total: int) -> None:
         nonlocal last
