@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
+        Self.resetPrivacyAfterUpdate()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(clicked)
         // On press, not release: the timer redraws every second, and a redraw between
@@ -124,16 +125,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor private func permissionsGranted() async -> Bool {
         if !CGPreflightScreenCaptureAccess() {
+            Self.resetPrivacy("ScreenCapture")  // drop a stale entry so macOS asks again for this build
             CGRequestScreenCaptureAccess()
             lastMessage = "⚠️ Allow Screen Recording, then restart the app"
             render()
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
             return false
         }
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .denied { Self.resetPrivacy("Microphone") }
         if await AVCaptureDevice.requestAccess(for: .audio) { return true }
         lastMessage = "⚠️ Allow the microphone in System Settings → Privacy & Security"
         render()
         return false
+    }
+
+    /// Ad-hoc signed builds get a new code identity on every update, so macOS keeps an
+    /// "on" switch that no longer applies to the new build. On the first launch of a new
+    /// version, and when a permission is missing, the app clears its own entries
+    /// (`tccutil reset <service> <its bundle ID>`) so macOS asks again. A signed build
+    /// would not need this.
+    private static func resetPrivacy(_ services: String...) {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        for service in services {
+            let p = Process()
+            p.executableURL = URL(filePath: "/usr/bin/tccutil")
+            p.arguments = ["reset", service, id]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try? p.run()
+            p.waitUntilExit()
+        }
+    }
+
+    private static func resetPrivacyAfterUpdate() {
+        let version = Updater.current
+        guard !version.contains("dev"), UserDefaults.standard.string(forKey: "lastLaunchedVersion") != version else { return }
+        if UserDefaults.standard.string(forKey: "lastLaunchedVersion") != nil { resetPrivacy("ScreenCapture", "Microphone") }
+        UserDefaults.standard.set(version, forKey: "lastLaunchedVersion")
     }
 
     /// The Recording shape in ui/src/types.ts.
