@@ -34,12 +34,13 @@ static class Preferences
     }
     const string KeyName = "GEMINI_API_KEY";  // the only available transcriber's key
 
-    public static readonly string[] AvailableTranscribers = { "gemini-3.5-transcribe", "local-whisper-bangla" };
+    public static readonly string[] AvailableTranscribers = { "gemini-3.5-transcribe", "local-whisper-bangla", "local-whisper-english" };
 
     public static readonly object[] Transcribers =
     {
         new { id = "gemini-3.5-transcribe", name = "Gemini 3.5 Transcribe", note = "Tested on our Bangla audio · ~$0.35/hour", available = true, needsKey = true },
-        new { id = "local-whisper-bangla", name = "Local Whisper (Bangla)", note = "On this PC, free, offline · Bangla-tuned · first use downloads ~1.5 GB", available = true, needsKey = false },
+        new { id = "local-whisper-bangla", name = "Local Whisper (Bangla)", note = "On this PC, free, offline · Bangla only: English words come out in Bangla letters · 1.5 GB", available = true, needsKey = false },
+        new { id = "local-whisper-english", name = "Local Whisper (English)", note = "On this PC, free, offline · English-only meetings · 1.6 GB", available = true, needsKey = false },
         new { id = "soniox", name = "Soniox", note = "Not added yet", available = false, needsKey = true },
     };
 

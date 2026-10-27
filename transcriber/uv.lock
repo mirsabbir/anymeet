@@ -1178,6 +1178,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "google-genai" },
+    { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "python-dotenv" },
 ]
@@ -1198,6 +1199,7 @@ dev = [
 requires-dist = [
     { name = "accelerate", marker = "extra == 'local'", specifier = ">=1.0" },
     { name = "google-genai", specifier = ">=2.33" },
+    { name = "huggingface-hub", specifier = ">=1.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "torch", marker = "extra == 'local'", specifier = ">=2.5" },

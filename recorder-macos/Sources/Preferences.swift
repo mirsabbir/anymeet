@@ -17,7 +17,8 @@ enum Preferences {
 
     static let transcribers: [[String: Any]] = [
         ["id": "gemini-3.5-transcribe", "name": "Gemini 3.5 Transcribe", "note": "Tested on our Bangla audio · ~$0.35/hour", "available": true, "needsKey": true],
-        ["id": "local-whisper-bangla", "name": "Local Whisper (Bangla)", "note": "On this Mac, free, offline · Bangla-tuned · first use downloads ~1.5 GB", "available": true, "needsKey": false],
+        ["id": "local-whisper-bangla", "name": "Local Whisper (Bangla)", "note": "On this Mac, free, offline · Bangla only: English words come out in Bangla letters · 1.5 GB", "available": true, "needsKey": false],
+        ["id": "local-whisper-english", "name": "Local Whisper (English)", "note": "On this Mac, free, offline · English-only meetings · 1.6 GB", "available": true, "needsKey": false],
         ["id": "soniox", "name": "Soniox", "note": "Not added yet", "available": false, "needsKey": true],
     ]
     static let keyName = "GEMINI_API_KEY"  // the only available transcriber's key

@@ -24,6 +24,7 @@ export interface MeetingFile {
   path: string
   kind: 'display' | 'audio'
   info: string // e.g. "2940×1912 · HEVC" or "Mono · 48 kHz"
+  url?: string // where the page can play it (served by the host, decoded by the system); absent if it can't
   thumbnail?: string // data: URL of a video frame
 }
 
@@ -42,6 +43,14 @@ export interface Transcriber {
   note: string
   available: boolean
   needsKey: boolean // false for local models
+}
+
+/** A local model's files on this computer. */
+export interface ModelState {
+  id: string // a Transcriber id, e.g. local-whisper-english
+  downloaded: boolean
+  progress?: { done: number; total: number } // bytes, while downloading; total is 0 while getting ready
+  error?: string // why the last download failed
 }
 
 /** live: while recording · after: when recording stops · off: only by hand */
@@ -87,9 +96,11 @@ export interface HostApi {
   getSettings(): Settings
   setTranscribeMode(p: { mode: TranscribeMode }): void
   setTranscriber(p: { id: string }): void
+  getModels(p: { refresh?: boolean }): ModelState[] // local models; refresh re-checks the disk (about a second)
+  downloadModel(p: { id: string }): void // returns at once; progress arrives with 'modelsChanged'
   setApiKey(p: { key: string }): void
   setGlossary(p: { terms: string[] }): void
 }
 
 // Pushed by the host when something changes outside the UI.
-export type HostEvent = 'meetingsChanged' | 'settingsChanged' | 'recordingChanged'
+export type HostEvent = 'meetingsChanged' | 'settingsChanged' | 'recordingChanged' | 'modelsChanged'

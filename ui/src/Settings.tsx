@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { call, on } from './bridge'
+import { bytes } from './format'
 import { Icon, type IconName } from './icons'
-import type { Settings as SettingsData, TranscribeMode } from './types'
+import type { ModelState, Settings as SettingsData, TranscribeMode, Transcriber } from './types'
 import { InstallButton, useUpdate } from './Update'
 
 const TABS: [Tab, string, IconName][] = [
@@ -79,6 +80,19 @@ function Transcription({ s, reload }: { s: SettingsData; reload: () => void }) {
   const [key, setKey] = useState('')
   const [saved, setSaved] = useState(false)
   const current = s.transcribers.find((t) => t.id === s.transcriber)
+  const [models, setModels] = useState<ModelState[]>([])
+  useEffect(() => {
+    call('getModels', { refresh: true }).then(setModels)
+    return on('modelsChanged', () => { call('getModels', {}).then(setModels) })
+  }, [])
+
+  // Choosing a local model that isn't on this computer yet starts its download.
+  const choose = async (t: Transcriber) => {
+    await call('setTranscriber', { id: t.id })
+    const m = models.find((m) => m.id === t.id)
+    if (m && !m.downloaded && !m.progress) await call('downloadModel', { id: t.id })
+    reload()
+  }
 
   const saveKey = async (e: FormEvent) => {
     e.preventDefault()
@@ -95,9 +109,10 @@ function Transcription({ s, reload }: { s: SettingsData; reload: () => void }) {
       <div className="cards" role="group" aria-label="Transcription model">
         {s.transcribers.map((t) => (
           <button key={t.id} className="card" aria-pressed={t.id === s.transcriber} disabled={!t.available}
-            onClick={() => call('setTranscriber', { id: t.id }).then(reload)}>
+            onClick={() => choose(t)}>
             <div className="name">{t.name}{t.id === s.transcriber && <span className="pill busy">Selected</span>}</div>
             <div className="small muted">{t.note}</div>
+            {models.filter((m) => m.id === t.id).map((m) => <Download key={m.id} m={m} />)}
           </button>
         ))}
       </div>
@@ -136,6 +151,25 @@ function Transcription({ s, reload }: { s: SettingsData; reload: () => void }) {
           <div className="chips"><span className="pill none">Bangla</span><span className="pill none">English</span></div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function Download({ m }: { m: ModelState }) {
+  if (m.progress) {
+    const { done, total } = m.progress
+    const pct = total ? Math.floor((100 * done) / total) : 0
+    return (
+      <div className="download">
+        <div className="small">{total ? `Downloading ${pct}% · ${bytes(done)} of ${bytes(total)}` : 'Getting ready to download…'}</div>
+        <div className="bar" role="progressbar" aria-label={`Downloading ${m.id}`} aria-valuenow={pct}><span style={{ width: `${pct}%` }} /></div>
+      </div>
+    )
+  }
+  if (m.downloaded) return <div className="download small ok"><Icon name="check" />Downloaded</div>
+  return (
+    <div className={`download small ${m.error ? 'bad' : 'muted'}`}>
+      <Icon name="download" />{m.error ? `Download failed: ${m.error} · click to try again` : 'Not downloaded · click to download'}
     </div>
   )
 }

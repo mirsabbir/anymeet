@@ -9,6 +9,8 @@ protocol Capture: AnyObject {
     func stop() async -> [String]
     /// Report a stop that came from macOS rather than from AnyMeet (self-test only).
     func simulateSystemStop() async
+    /// Stop the way the system's ⏹ in the menu bar does: no stream-delegate call (self-test only).
+    func simulateMenuBarStop() async
 }
 
 extension Recorder: Capture {}
@@ -55,6 +57,11 @@ final class FakeCapture: Capture {
         onStreamError?(NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.userStopped.rawValue))
     }
 
+    /// No recording output here; report what Recorder reports when its output finishes unasked.
+    func simulateMenuBarStop() async {
+        onStreamError?(RecorderError.stoppedFromMenuBar)
+    }
+
     func stop() async -> [String] {
         guard let folder else { return ["no folder"] }
         feeder?.cancel()
@@ -68,6 +75,10 @@ final class FakeCapture: Capture {
 /// recording, the transcriber, the menu-bar icon and the Settings window, checks each
 /// step, writes a JSON report and exits 0 (all passed) or 1. Uses the clipboard and
 /// restores it afterwards. Removes the meeting folder it creates.
+///
+/// `--download-test <model id>` runs only the model download instead: it picks the model in
+/// Settings the way a user does and follows the progress to the end. Start it with HF_HOME
+/// set to an empty folder, so it really downloads and leaves the user's model cache alone.
 @MainActor
 enum SelfTest {
     nonisolated static let enabled = CommandLine.arguments.contains("--self-test")
@@ -87,6 +98,11 @@ enum SelfTest {
             let deadline = Date().addingTimeInterval(seconds)
             while !done() && Date() < deadline { try? await Task.sleep(for: .milliseconds(200)) }
             return done()
+        }
+
+        if let i = CommandLine.arguments.firstIndex(of: "--download-test"), i + 1 < CommandLine.arguments.count {
+            await downloadTest(CommandLine.arguments[i + 1], check)
+            finish(checks, report)
         }
 
         let savedMode = UserDefaults.standard.string(forKey: "transcribeMode")  // nil = never set; restore exactly
@@ -125,6 +141,35 @@ enum SelfTest {
                   !log.isEmpty && !log.contains("not found") && !log.contains("Traceback"),
                   String(log.split(separator: "\n").last ?? ""))
             check("transcript.json written", FileManager.default.fileExists(atPath: folder.appending(path: "transcript.json").path))
+
+            // 4b. The in-app player, the way a user reaches it: click a segment's time in the
+            //     transcript; the speaker's track must load and seek inside the window (muted here).
+            WebWindows.shared.showMeetings(id: folder.lastPathComponent)
+            try? await Task.sleep(for: .seconds(3))
+            if let (window, web) = WebWindows.shared.window("meetings") {
+                let result = (try? await web.callAsyncJavaScript("""
+                    const play = HTMLMediaElement.prototype.play
+                    HTMLMediaElement.prototype.play = function () { this.muted = true; return play.call(this) }
+                    const at = document.querySelector('.segment .at')
+                    if (!at) return 'no segment to click'
+                    at.click()
+                    for (let i = 0; i < 50; i++) {
+                      const a = document.querySelector('.player audio')
+                      if (a && a.readyState >= 1 && a.duration > 0) {
+                        a.currentTime = Math.min(1, a.duration / 2)
+                        await new Promise((ok) => { a.onseeked = ok; setTimeout(ok, 3000) })
+                        return `duration ${a.duration.toFixed(1)} s, seeked to ${a.currentTime.toFixed(1)} s, from ${a.currentSrc.split(':')[0]}`
+                      }
+                      await new Promise((ok) => setTimeout(ok, 200))
+                    }
+                    const a = document.querySelector('.player audio')
+                    return a ? `audio not playable (error ${a.error && a.error.code})` : 'no player opened'
+                    """, arguments: [:], in: nil, contentWorld: .page)) as? String ?? "script failed"
+                check("player: clicking a segment's time plays its track in the app", result.hasPrefix("duration") && !result.contains("seeked to 0.0"), result)
+                window.close()
+            } else {
+                check("player: Meetings window opened", false)
+            }
             try? FileManager.default.removeItem(at: folder)
         }
 
@@ -147,6 +192,25 @@ enum SelfTest {
             }
         } else {
             check("second recording started", false)
+        }
+
+        // 5b. The system's ⏹ in the menu bar stops a display without telling the stream
+        //     delegate: AnyMeet must notice, stop fully, and leave no menu-bar item behind.
+        let itemsIdle = app.menuBarItemCount
+        app.simulateStatusItemClick()
+        if await wait(10, until: { app.isRecording }) {
+            try? await Task.sleep(for: .seconds(2))
+            let menuFolder = app.currentFolder
+            let itemsRecording = app.menuBarItemCount
+            await app.simulateMenuBarStop()
+            let stopped = await wait(30) { app.recording["state"] as? String == "idle" }
+            check("menu-bar ⏹: AnyMeet stops too", stopped, app.recording["message"] as? String ?? "")
+            try? await Task.sleep(for: .seconds(1))
+            check("menu-bar ⏹: no menu-bar item left behind", app.menuBarItemCount == itemsIdle,
+                  "idle \(itemsIdle), recording \(itemsRecording), after \(app.menuBarItemCount)")
+            if let menuFolder { try? FileManager.default.removeItem(at: menuFolder) }
+        } else {
+            check("third recording started", false)
         }
 
         // 6. Live transcription: text must appear while still recording, and the run
@@ -215,6 +279,10 @@ enum SelfTest {
         pasteboard.clearContents()
         if let saved { pasteboard.setString(saved, forType: .string) }
 
+        finish(checks, report)
+    }
+
+    private static func finish(_ checks: [[String: Any]], _ report: URL) -> Never {
         let failed = checks.filter { $0["ok"] as? Bool != true }.count
         let skipped = checks.filter { $0["skipped"] as? Bool == true }.count
         let summary: [String: Any] = ["passed": checks.count - failed - skipped, "failed": failed, "skipped": skipped,
@@ -222,5 +290,44 @@ enum SelfTest {
         if let data = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted]) { try? data.write(to: report) }
         print("\(checks.count - failed - skipped) passed, \(failed) failed, \(skipped) skipped")
         exit(failed == 0 ? 0 : 1)
+    }
+
+    /// Settings → Transcription: the card of a model that isn't downloaded says so; clicking it
+    /// shows progress that goes up to the end, and the transcriber then finds every file.
+    private static func downloadTest(_ id: String, _ check: (String, Bool, String) -> Void) async {
+        let savedTranscriber = UserDefaults.standard.string(forKey: "transcriber")
+        defer {
+            if let savedTranscriber { UserDefaults.standard.set(savedTranscriber, forKey: "transcriber") }
+            else { UserDefaults.standard.removeObject(forKey: "transcriber") }
+        }
+        let name = Preferences.transcribers.first { $0["id"] as? String == id }?["name"] as? String ?? id
+        WebWindows.shared.showSettings(tab: "transcription")
+        try? await Task.sleep(for: .seconds(4))  // the page asks the transcriber which models are downloaded
+        guard let (_, web) = WebWindows.shared.window("settings") else { return check("Settings window opened", false, "") }
+        let card = "[...document.querySelectorAll('.card')].find((c) => c.innerText.includes(\(String(reflecting: name))))"
+        func status() async -> String {
+            (try? await web.evaluateJavaScript("(\(card)?.querySelector('.download')?.innerText ?? '').trim()")) as? String ?? ""
+        }
+        let before = await status()
+        check("download: card says the model isn't downloaded", before.contains("Not downloaded"), before)
+        _ = try? await web.evaluateJavaScript("\(card).click()")
+
+        var seen: [String] = []
+        var percents: [Int] = []
+        let started = Date()
+        while Date().timeIntervalSince(started) < 30 * 60 {
+            let text = await status()
+            if text != seen.last { seen.append(text) }
+            if let match = text.firstMatch(of: #/Downloading (\d+)%/#), let pct = Int(match.1) { percents.append(pct) }
+            if text.contains("Downloaded") || text.contains("failed") { break }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        let steps = Set(percents).count
+        check("download: progress shown and only goes up", steps >= 5 && percents == percents.sorted() && (percents.last ?? 0) >= 90,
+              "\(steps) different percentages, last \(percents.last ?? -1)%, \(Int(Date().timeIntervalSince(started))) s")
+        check("download: card ends with 'Downloaded'", seen.last?.contains("Downloaded") == true, seen.suffix(3).joined(separator: " → "))
+        let models = (try? await ModelDownloads.shared.list(refresh: true)) ?? []
+        let found = models.first { $0["id"] as? String == id }?["downloaded"] as? Bool == true
+        check("download: the transcriber finds every file", found, "\(models.map { "\($0["id"] ?? ""): \($0["downloaded"] ?? "")" })")
     }
 }

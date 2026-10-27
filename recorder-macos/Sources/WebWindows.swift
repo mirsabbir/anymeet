@@ -18,6 +18,9 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         NotificationCenter.default.addObserver(forName: AppDelegate.recordingChanged, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { WebWindows.shared.emit("recordingChanged") }
         }
+        NotificationCenter.default.addObserver(forName: ModelDownloads.changed, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { WebWindows.shared.emit("modelsChanged") }
+        }
     }
 
     func showMeetings(id: String? = nil) { show("meetings", id: id, title: "AnyMeet", size: NSSize(width: 1180, height: 760)) }
@@ -34,6 +37,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         }
         let config = WKWebViewConfiguration()
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "bridge")
+        config.setURLSchemeHandler(MediaSchemeHandler(), forURLScheme: MediaSchemeHandler.scheme)
         let web = WKWebView(frame: .zero, configuration: config)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -125,6 +129,13 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             guard Preferences.transcribers.contains(where: { $0["id"] as? String == id && $0["available"] as? Bool == true })
             else { throw BridgeError("transcriber not available") }
             Preferences.transcriber = id
+        case "getModels":
+            return try await ModelDownloads.shared.list(refresh: p["refresh"] as? Bool ?? false)
+        case "downloadModel":
+            let id = p["id"] as? String ?? ""
+            guard Preferences.transcribers.contains(where: { $0["id"] as? String == id && $0["needsKey"] as? Bool == false })
+            else { throw BridgeError("not a local model: \(id)") }
+            try ModelDownloads.shared.start(id)
         case "setApiKey":
             try Preferences.setApiKey(p["key"] as? String ?? "")
         case "setGlossary":

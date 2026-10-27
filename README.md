@@ -5,7 +5,8 @@ AnyMeet is a bot-free meeting recorder for macOS and Windows. One click records 
 - **No meeting bot.** Everything is captured on your own computer; recordings stay in `~/Meetings`.
 - **Speakers from tracks.** Your microphone is labelled "Me", system audio "Others".
 - **Your words, spelled right.** A personal glossary (names, products, jargon) keeps English terms in English letters.
-- **Swappable transcription.** Gemini 3.5 Transcribe by default, or a free Bangla-tuned Whisper model that runs on your own Mac. Providers plug in through a small adapter.
+- **Swappable transcription.** Gemini 3.5 Transcribe by default, or free Whisper models that run on your own computer (one for Bangla, one for English). Providers plug in through a small adapter.
+- **Play it back in the app.** Click a time in the transcript to hear that moment from the speaker's own track; recordings play inside the app with the system's own decoders.
 
 | Folder | What's inside |
 |---|---|
@@ -69,9 +70,12 @@ Settings → Transcription picks the model and when it runs.
 | Model | Where it runs | Notes |
 |---|---|---|
 | Gemini 3.5 Transcribe | Google's API | Needs a Gemini API key (prepaid credits); about $0.35 per hour of audio |
-| Local Whisper (Bangla) | This Mac, offline | Free. The first use downloads about 1.5 GB to `~/.cache/huggingface`. On an M3, 1 minute of audio takes about 1 minute. English words come out in Bangla letters |
+| Local Whisper (Bangla) | Your computer, offline | Free, 1.5 GB. Bangla only: English words come out in Bangla letters. On an M3, 1 minute of audio takes about 1 minute |
+| Local Whisper (English) | Your computer, offline | Free, 1.6 GB (Whisper large-v3-turbo). English-only meetings; Bangla speech comes out translated or garbled |
 
-To install the local model's packages once: `cd transcriber && uv sync --extra local`. The app passes `--extra local` itself when this model is selected.
+Local models are downloaded from Hugging Face to `~/.cache/huggingface`. Picking one in Settings that isn't on the computer yet starts the download there, with a progress bar; the app also installs the extra Python packages it needs. From the command line: `uv run transcribe --models` lists what is downloaded, and `uv run --extra local transcribe --download local-whisper-english` fetches one.
+
+No local model handles Bangla and English in the same sentence yet; use Gemini for mixed meetings.
 
 **When to transcribe**
 
@@ -103,7 +107,15 @@ cd transcriber && uv run pytest                       # transcriber: audio split
 recorder-macos/build.sh && recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-test.json --fake-capture
 ```
 
-The macOS self-test drives the real app: it records (with `--fake-capture`, a spoken test clip instead of the screen), stops from the menu-bar item, runs the transcriber after the meeting and live (the transcript must appear while still recording), checks the menu-bar icon at every step, pastes into the API key field and copies to the clipboard, then writes a pass/fail report. Without `--fake-capture`, start it with `open -a AnyMeet --args --self-test <report.json>` so the real screen capture runs under AnyMeet's own permission. GitHub Actions runs the transcriber tests and builds on every push.
+The macOS self-test drives the real app: it records (with `--fake-capture`, a spoken test clip instead of the screen), stops from the menu-bar item, runs the transcriber after the meeting and live (the transcript must appear while still recording), checks the menu-bar icon at every step, pastes into the API key field and copies to the clipboard, then writes a pass/fail report. Without `--fake-capture`, start it with `open -a AnyMeet --args --self-test <report.json>` so the real screen capture runs under AnyMeet's own permission. It also plays a track from the transcript inside the app, and stops the way the system's ⏹ in the menu bar does (that button stops only the screen video, so AnyMeet has to notice and stop the rest).
+
+`--download-test <model>` checks a local model download through Settings instead: the card says it isn't downloaded, clicking it shows progress up to the end, and the transcriber finds every file. Give it an empty `HF_HOME` so it really downloads and leaves your model cache alone:
+
+```bash
+HF_HOME=$(mktemp -d) recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-download.json --download-test local-whisper-english
+```
+
+GitHub Actions runs the transcriber tests and builds on every push.
 
 ## License
 

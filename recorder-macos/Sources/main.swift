@@ -157,7 +157,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func stopReason(_ error: Error) -> String {
         let e = error as NSError
-        if e.domain == SCStreamErrorDomain, e.code == SCStreamError.Code.userStopped.rawValue {
+        if error as? RecorderError == .stoppedFromMenuBar
+            || (e.domain == SCStreamErrorDomain && e.code == SCStreamError.Code.userStopped.rawValue) {
             return "Stopped from the macOS menu bar. The recording is saved."
         }
         return "macOS stopped the capture (\(error.localizedDescription)). The recording is saved."
@@ -240,6 +241,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Makes the capture report that macOS stopped it, like the system indicator's Stop.
     func simulateSystemStop() async { await recorder.simulateSystemStop() }
+
+    /// Stops the capture the way the system's ⏹ in the menu bar does.
+    func simulateMenuBarStop() async { await recorder.simulateMenuBarStop() }
+
+    /// Menu-bar items this process has: AnyMeet's own, plus the system's ⏹ while recording real screens.
+    var menuBarItemCount: Int { NSApp.windows.filter { String(describing: type(of: $0)).contains("StatusBarWindow") }.count }
 
     /// Sends the status item's action the way a left click does.
     func simulateStatusItemClick() {

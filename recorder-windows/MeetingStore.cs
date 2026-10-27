@@ -81,6 +81,11 @@ static class MeetingStore
 
     static bool IsAudio(string path) => AudioExtensions.Contains(Path.GetExtension(path));
 
+    /// Virtual host for the meetings folder in WebView2 (see WebWindow), so recordings play in the app.
+    public const string MediaHost = "media.anymeet";
+    static string MediaUrl(string path) =>
+        $"https://{MediaHost}/{Uri.EscapeDataString(Path.GetFileName(Path.GetDirectoryName(path)!))}/{Uri.EscapeDataString(Path.GetFileName(path))}";
+
     static IEnumerable<string> MediaFiles(string folder) => Directory.GetFiles(folder).OrderBy(f => f)
         .Where(f => Path.GetFileName(f).StartsWith("display-") || IsAudio(f));
 
@@ -103,7 +108,7 @@ static class MeetingStore
             var name = Path.GetFileName(path);
             if (name.StartsWith("display-"))
             {
-                result.Add(new() { ["name"] = name, ["path"] = path, ["kind"] = "display", ["info"] = "Video", ["thumbnail"] = await Thumbnail(path) });
+                result.Add(new() { ["name"] = name, ["path"] = path, ["url"] = MediaUrl(path), ["kind"] = "display", ["info"] = "Video", ["thumbnail"] = await Thumbnail(path) });
                 continue;
             }
             var stem = Path.GetFileNameWithoutExtension(path);
@@ -114,7 +119,7 @@ static class MeetingStore
                 var channels = format.Channels switch { 1 => "Mono", 2 => "Stereo", var c => $"{c} channels" };
                 info = $"{who}{channels} · {format.SampleRate / 1000} kHz";
             }
-            result.Add(new() { ["name"] = name, ["path"] = path, ["kind"] = "audio", ["info"] = info });
+            result.Add(new() { ["name"] = name, ["path"] = path, ["url"] = MediaUrl(path), ["kind"] = "audio", ["info"] = info });
         }
         return result;
     }

@@ -1,4 +1,4 @@
-import type { HostApi, Meeting, Recording, Settings } from './types'
+import type { HostApi, Meeting, ModelState, Recording, Settings } from './types'
 
 // Made-up sample data for `npm run dev` in a plain browser.
 const road: Meeting = {
@@ -33,13 +33,31 @@ const settings: Settings = {
   transcriber: 'gemini-3.5-transcribe',
   transcribers: [
     { id: 'gemini-3.5-transcribe', name: 'Gemini 3.5 Transcribe', note: 'Tested on our Bangla audio · ~$0.35/hour', available: true, needsKey: true },
-    { id: 'local-whisper-bangla', name: 'Local Whisper (Bangla)', note: 'On this Mac, free, offline · Bangla-tuned · first use downloads ~1.5 GB', available: true, needsKey: false },
+    { id: 'local-whisper-bangla', name: 'Local Whisper (Bangla)', note: 'On this Mac, free, offline · Bangla only: English words come out in Bangla letters · 1.5 GB', available: true, needsKey: false },
+    { id: 'local-whisper-english', name: 'Local Whisper (English)', note: 'On this Mac, free, offline · English-only meetings · 1.6 GB', available: true, needsKey: false },
     { id: 'soniox', name: 'Soniox', note: 'Not added yet', available: false, needsKey: true },
   ],
   apiKeySet: true,
   glossary: ['API', 'deploy', 'sprint', 'release plan'],
   displays: ['Built-in Retina Display · 2940×1912'],
   microphone: 'MacBook Air Microphone',
+}
+
+const models: ModelState[] = [
+  { id: 'local-whisper-bangla', downloaded: true },
+  { id: 'local-whisper-english', downloaded: false },
+]
+
+// A pretend 1.6 GB download that finishes in about ten seconds.
+function mockDownload(m: ModelState) {
+  const total = 1_617_824_864
+  m.progress = { done: 0, total: 0 }
+  const tick = setInterval(() => {
+    const done = Math.min(total, (m.progress?.done ?? 0) + total / 40)
+    m.progress = done < total ? { done, total } : undefined
+    if (!m.progress) { m.downloaded = true; clearInterval(tick) }
+    ;(window as unknown as { __hostEvent: (e: string) => void }).__hostEvent('modelsChanged')
+  }, 250)
 }
 
 let recording: Recording = { state: 'idle', message: 'Ready' }
@@ -58,6 +76,8 @@ export async function mockHost(method: keyof HostApi, params: unknown): Promise<
     case 'getSettings': return { ...settings }
     case 'setTranscribeMode': settings.transcribeMode = p.mode as Settings['transcribeMode']; return
     case 'setTranscriber': settings.transcriber = p.id as string; return
+    case 'getModels': return models.map((m) => ({ ...m }))
+    case 'downloadModel': mockDownload(models.find((m) => m.id === p.id)!); return
     case 'setApiKey': settings.apiKeySet = Boolean(p.key); return
     case 'setGlossary': settings.glossary = p.terms as string[]; return
     default: return

@@ -18,6 +18,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
     private let lock = NSLock()  // recording-output callbacks arrive on arbitrary threads
     private var videoFinished = Set<ObjectIdentifier>()
     private var videoErrors: [Error] = []
+    private var recordingOutputs: [(SCStream, SCRecordingOutput)] = []
+    private var stopping = false  // under lock: outputs finishing now were asked to
 
     /// `live`: also write live/mic.wav and live/system.wav as they record, for live transcription.
     func start(in folder: URL, live: Bool) async throws {
@@ -33,7 +35,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
             rc.outputURL = folder.appending(path: "display-\(n + 1).mp4")
             rc.outputFileType = .mp4
             if rc.availableVideoCodecTypes.contains(.hevc) { rc.videoCodecType = .hevc }
-            try stream.addRecordingOutput(SCRecordingOutput(configuration: rc, delegate: self))
+            let output = SCRecordingOutput(configuration: rc, delegate: self)
+            try stream.addRecordingOutput(output)
+            recordingOutputs.append((stream, output))
             videoDone.enter()
             streams.append(stream)
         }
@@ -57,6 +61,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
 
     /// Stops everything and returns problems worth showing (empty when all files are good).
     func stop() async -> [String] {
+        lock.withLock { stopping = true }
         for stream in streams { try? await stream.stopCapture() }
         let hadVideo = streams.count > 1
         streams = []
@@ -73,7 +78,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
             if writer.buffers == 0 { problems.append("\(name): no audio was received") }
         }
         (system, mic) = (nil, nil)
-        lock.withLock { (videoErrors, videoFinished) = ([], []) }
+        // Let go of the outputs, so nothing of this recording (such as the system's ⏹) outlives it.
+        for (stream, output) in recordingOutputs { try? stream.removeRecordingOutput(output) }
+        recordingOutputs = []
+        lock.withLock { (videoErrors, videoFinished, stopping) = ([], [], false) }
         return problems
     }
 
@@ -121,6 +129,12 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
         onStreamError?(error)
     }
 
+    /// Self-test: stops the first display's stream without telling its delegate, the way
+    /// the system's ⏹ in the menu bar does.
+    func simulateMenuBarStop() async {
+        try? await streams.first?.stopCapture()
+    }
+
     /// Self-test: stops the first display's stream and reports it the way macOS does when
     /// the user clicks Stop on the system's screen-recording indicator.
     func simulateSystemStop() async {
@@ -138,22 +152,29 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, SCRecordingOut
     }
 
     /// A failed output may also report finishing; leave the group only once per output.
+    ///
+    /// macOS puts a ⏹ in the menu bar for every recording output. Clicking it stops that
+    /// display's stream without calling the stream delegate, so an output that finishes
+    /// while AnyMeet isn't stopping is the only sign: treat it as Stop for the whole recording.
     private func markVideoDone(_ output: SCRecordingOutput, error: Error?) {
-        let first = lock.withLock {
+        let (first, unasked) = lock.withLock {
             if let error { videoErrors.append(error) }
-            return videoFinished.insert(ObjectIdentifier(output)).inserted
+            return (videoFinished.insert(ObjectIdentifier(output)).inserted, !stopping)
         }
-        if first { videoDone.leave() }
+        guard first else { return }
+        videoDone.leave()
+        if unasked { onStreamError?(error ?? RecorderError.stoppedFromMenuBar) }
     }
 }
 
 enum RecorderError: LocalizedError {
-    case noDisplay, videoTimeout
+    case noDisplay, videoTimeout, stoppedFromMenuBar
 
     var errorDescription: String? {
         switch self {
         case .noDisplay: "no display found to record"
         case .videoTimeout: "a display recording did not finish within 15 seconds"
+        case .stoppedFromMenuBar: "the recording was stopped from the menu bar"
         }
     }
 }

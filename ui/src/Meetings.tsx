@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { call, on } from './bridge'
 import { clock, dateTime, dayLabel, duration, time } from './format'
 import { Icon } from './icons'
 import { RecordBar } from './RecordBar'
 import { UpdateBanner } from './Update'
-import type { Meeting, MeetingSummary, Segment, TranscriptStatus } from './types'
+import type { Meeting, MeetingFile, MeetingSummary, Segment, TranscriptStatus } from './types'
+
+/** What the in-app player shows; n changes on every request, so the same time can be played twice. */
+type Playing = { file: MeetingFile; at: number; n: number }
+const TRACK_OF: Record<string, string> = { Me: 'mic', Others: 'system' }
 
 const STATUS: Record<TranscriptStatus, [string, string]> = {
   done: ['ok', 'Transcript ready'],
@@ -93,6 +97,8 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
   const [copied, setCopied] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [playing, setPlaying] = useState<Playing>()
+  useEffect(() => setPlaying(undefined), [id])
 
   const load = useCallback(() => { call('getMeeting', { id }).then(setMeeting) }, [id])
   useEffect(() => { load(); return on('meetingsChanged', load) }, [load])
@@ -106,6 +112,14 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
   if (!meeting) return null
 
   const failed = meeting.segments.filter((s) => s.failed).length
+  const play = (file: MeetingFile, at = 0) =>
+    file.url ? setPlaying((p) => ({ file, at, n: (p?.n ?? 0) + 1 })) : call('openPath', { path: file.path })
+  // A segment plays from its speaker's own track: Me → mic, Others → system.
+  const playSegment = (s: Segment) => {
+    const audio = meeting.files.filter((f) => f.kind === 'audio')
+    const file = audio.find((f) => f.name.split('.')[0] === (TRACK_OF[s.speaker] ?? s.speaker)) ?? audio[0]
+    if (file) play(file, s.start)
+  }
   const transcribe = () => call('transcribe', { id }).then(load)
   const copy = async () => {
     await navigator.clipboard.writeText(meeting.transcriptText)
@@ -145,20 +159,21 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
             {deleteError && <span className="small" style={{ flexBasis: '100%', color: 'var(--warn)' }}>{deleteError}</span>}
           </div>
         </header>
-        <Transcript meeting={meeting} query={query} onTranscribe={transcribe} />
+        {playing && <Player key={playing.file.name} {...playing} onClose={() => setPlaying(undefined)} />}
+        <Transcript meeting={meeting} query={query} onTranscribe={transcribe} onPlay={playSegment} />
       </div>
       <aside className="files" aria-label="Recorded files">
         {meeting.files.some((f) => f.kind === 'display') && <div className="eyebrow" style={{ padding: 0 }}>Displays</div>}
         {meeting.files.filter((f) => f.kind === 'display').map((f) => (
           <button key={f.name} className="thumb" style={f.thumbnail ? { backgroundImage: `url(${f.thumbnail})` } : undefined}
-            onClick={() => call('openPath', { path: f.path })} aria-label={`Play ${f.name}`}>
+            onClick={() => play(f)} aria-label={`Play ${f.name}`} aria-current={playing?.file.name === f.name || undefined}>
             <span className="play"><Icon name="play" /></span>
             <span className="label">{f.name} · {f.info}</span>
           </button>
         ))}
         <div className="eyebrow" style={{ padding: '8px 0 0' }}>Audio tracks</div>
         {meeting.files.filter((f) => f.kind === 'audio').map((f) => (
-          <button key={f.name} className="track" onClick={() => call('openPath', { path: f.path })}>
+          <button key={f.name} className="track" onClick={() => play(f)} aria-current={playing?.file.name === f.name || undefined}>
             <span className={`dot ${f.name.startsWith('system') ? 'others' : ''}`} />
             <span style={{ flex: 1 }}><span style={{ fontWeight: 600, fontSize: 13 }}>{f.name}</span><br /><span className="small muted">{f.info}</span></span>
             <Icon name="play" />
@@ -169,7 +184,28 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
   )
 }
 
-function Transcript({ meeting, query, onTranscribe }: { meeting: Meeting; query: string; onTranscribe: () => void }) {
+function Player({ file, at, n, onClose }: Playing & { onClose: () => void }) {
+  const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null)
+  useEffect(() => {
+    const media = ref.current
+    if (!media) return
+    const go = () => { media.currentTime = at; media.play().catch(() => {}) }
+    if (media.readyState >= 1) go()
+    else media.addEventListener('loadedmetadata', go, { once: true })
+    return () => media.removeEventListener('loadedmetadata', go)
+  }, [at, n])
+  return (
+    <div className="player" aria-label="Player">
+      {file.kind === 'display' ? <video ref={ref} src={file.url} controls /> : <audio ref={ref} src={file.url} controls />}
+      <div className="player-bar">
+        <span className="small"><b>{file.name}</b> · {file.info}</span>
+        <button className="btn" onClick={onClose}><Icon name="close" />Close</button>
+      </div>
+    </div>
+  )
+}
+
+function Transcript({ meeting, query, onTranscribe, onPlay }: { meeting: Meeting; query: string; onTranscribe: () => void; onPlay: (s: Segment) => void }) {
   if (meeting.status === 'transcribing' && meeting.segments.length === 0) {
     return <div className="empty"><div className="spinner" /><h2>Transcribing…</h2><p>Text shows up here as each part is done.</p></div>
   }
@@ -185,16 +221,16 @@ function Transcript({ meeting, query, onTranscribe }: { meeting: Meeting; query:
   }
   return (
     <section className="transcript" aria-label="Transcript">
-      {meeting.segments.map((s, i) => <SegmentRow key={i} s={s} query={query} onRetry={onTranscribe} />)}
+      {meeting.segments.map((s, i) => <SegmentRow key={i} s={s} query={query} onRetry={onTranscribe} onPlay={onPlay} />)}
       {meeting.status === 'transcribing' && <p className="live-note small muted"><span className="spinner small-spinner" />Transcribing… new text appears as each part is done</p>}
     </section>
   )
 }
 
-function SegmentRow({ s, query, onRetry }: { s: Segment; query: string; onRetry: () => void }) {
+function SegmentRow({ s, query, onRetry, onPlay }: { s: Segment; query: string; onRetry: () => void; onPlay: (s: Segment) => void }) {
   return (
     <div className="segment">
-      <div className="at">{clock(s.start)}</div>
+      <button className="at" onClick={() => onPlay(s)} title="Play from here" aria-label={`Play from ${clock(s.start)}`}><Icon name="play" />{clock(s.start)}</button>
       {s.failed ? (
         <div className="failed">
           <Icon name="warning" label="Warning" />

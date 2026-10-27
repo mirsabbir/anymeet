@@ -99,7 +99,7 @@ enum MeetingStore {
         for url in mediaFiles(folder) {
             let asset = AVURLAsset(url: url)
             if url.lastPathComponent.hasPrefix("display-") {
-                var file: [String: Any] = ["name": url.lastPathComponent, "path": url.path, "kind": "display", "info": "Video"]
+                var file: [String: Any] = ["name": url.lastPathComponent, "path": url.path, "url": MediaSchemeHandler.url(for: url), "kind": "display", "info": "Video"]
                 if let track = try? await asset.loadTracks(withMediaType: .video).first,
                    let size = try? await track.load(.naturalSize) {
                     file["info"] = "\(Int(size.width))×\(Int(size.height))"
@@ -115,7 +115,7 @@ enum MeetingStore {
                     let channels = asbd.mChannelsPerFrame == 1 ? "Mono" : asbd.mChannelsPerFrame == 2 ? "Stereo" : "\(asbd.mChannelsPerFrame) channels"
                     info = who + "\(channels) · \(Int(asbd.mSampleRate / 1000)) kHz"
                 }
-                result.append(["name": url.lastPathComponent, "path": url.path, "kind": "audio", "info": info])
+                result.append(["name": url.lastPathComponent, "path": url.path, "url": MediaSchemeHandler.url(for: url), "kind": "audio", "info": info])
             }
         }
         return result

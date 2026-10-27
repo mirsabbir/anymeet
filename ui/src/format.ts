@@ -1,3 +1,8 @@
+/** "820 MB" or "1.62 GB". */
+export function bytes(n: number): string {
+  return n < 1e9 ? `${Math.round(n / 1e6)} MB` : `${(n / 1e9).toFixed(2)} GB`
+}
+
 export function clock(seconds: number): string {
   const s = Math.floor(seconds)
   const pad = (n: number) => String(n).padStart(2, '0')

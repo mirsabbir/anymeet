@@ -61,6 +61,8 @@ sealed class WebWindow : Form
             var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AnyMeet", "WebView2");
             await web.EnsureCoreWebView2Async(await CoreWebView2Environment.CreateAsync(null, data));
             web.CoreWebView2!.WebMessageReceived += OnMessage;
+            // Recordings play inside the app at https://media.anymeet/<meeting id>/<file>, decoded by Windows.
+            web.CoreWebView2.SetVirtualHostNameToFolderMapping(MeetingStore.MediaHost, Preferences.MeetingsRoot, CoreWebView2HostResourceAccessKind.Allow);
         }
         var index = Path.Combine(AppContext.BaseDirectory, "ui", "index.html");
         var fragment = "/" + view + (id != null ? "/" + Uri.EscapeDataString(id) : "");
@@ -131,6 +133,12 @@ sealed class WebWindow : Form
                 return null;
             case "setTranscriber":
                 Preferences.Transcriber = Preferences.AvailableTranscribers.Contains(Str("id")) ? Str("id") : throw new InvalidOperationException("transcriber not available");
+                return null;
+            case "getModels":
+                return await ModelDownloads.List(p["refresh"]?.GetValue<bool>() ?? false);
+            case "downloadModel":
+                if (!Str("id").StartsWith("local-") || !Preferences.AvailableTranscribers.Contains(Str("id"))) throw new InvalidOperationException("not a local model");
+                ModelDownloads.Start(Str("id"));
                 return null;
             case "setApiKey":
                 Preferences.SetApiKey(Str("key"));

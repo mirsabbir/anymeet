@@ -19,6 +19,22 @@ final class TranscriptionRunner {
         return (toolFolders + path).map { "\($0)/\(tool)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    /// A `uv run --project <transcriber> <args>` process with the PATH the transcriber needs.
+    static func uvProcess(_ args: [String]) throws -> Process {
+        guard let project = Preferences.transcriberProject else {
+            throw BridgeError("transcriber not found: set it with `defaults write com.mirsabbir.anymeet transcriberProject <repo>/transcriber`")
+        }
+        guard let uv = find("uv") else { throw BridgeError("uv not found: install it with `brew install uv`") }
+        let process = Process()
+        process.executableURL = URL(filePath: uv)
+        process.arguments = ["run", "--project", project] + args
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (toolFolders + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
+        env["PYTHONUNBUFFERED"] = "1"  // output as it happens, not only at the end
+        process.environment = env
+        return process
+    }
+
     /// Returns false when the transcriber can't run or this folder is already running.
     @discardableResult
     /// `live`: start while recording; the transcriber follows live/*.wav until live/done appears.
@@ -31,22 +47,12 @@ final class TranscriptionRunner {
             return false
         }
         guard !running.contains(folder.path) else { lastError = "already transcribing"; return false }
-        guard let project = Preferences.transcriberProject else {
-            return fail("transcriber not found: set it with `defaults write com.mirsabbir.anymeet transcriberProject <repo>/transcriber`")
-        }
-        guard let uv = Self.find("uv") else { return fail("uv not found: install it with `brew install uv`") }
-        guard Self.find("ffmpeg") != nil else { return fail("ffmpeg not found: install it with `brew install ffmpeg`") }
-
-        let process = Process()
-        process.executableURL = URL(filePath: uv)
         // Local models need the optional torch/transformers install; uv adds it on first use.
         let extra = Preferences.transcriber.hasPrefix("local-") ? ["--extra", "local"] : []
-        process.arguments = ["run", "--project", project] + extra + ["transcribe", folder.path] + (live ? ["--live"] : [])
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = (Self.toolFolders + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
-        env["TRANSCRIBER"] = Preferences.transcriber
-        env["PYTHONUNBUFFERED"] = "1"  // write transcribe.log as it goes, not only at the end
-        process.environment = env
+        let process: Process
+        do { process = try Self.uvProcess(extra + ["transcribe", folder.path] + (live ? ["--live"] : [])) } catch { return fail(error.localizedDescription) }
+        guard Self.find("ffmpeg") != nil else { return fail("ffmpeg not found: install it with `brew install ffmpeg`") }
+        process.environment?["TRANSCRIBER"] = Preferences.transcriber
         FileManager.default.createFile(atPath: log.path, contents: nil)
         if let handle = try? FileHandle(forWritingTo: log) {
             process.standardOutput = handle

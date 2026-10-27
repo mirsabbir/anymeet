@@ -4,6 +4,8 @@ pipeline, so a new provider is one small class plus one registry line."""
 from pathlib import Path
 from typing import Callable, Protocol
 
+from . import models
+
 
 class Transcriber(Protocol):
     name: str
@@ -20,19 +22,18 @@ def _gemini_35() -> Transcriber:
     return GeminiTranscriber("gemini-3.5-transcribe")
 
 
-def _local(name: str, model: str, base: str | None = None) -> Callable[[], Transcriber]:
+def _local(name: str) -> Callable[[], Transcriber]:
     def make() -> Transcriber:
         from .local_whisper import LocalWhisperTranscriber
 
-        return LocalWhisperTranscriber(name, model, base)
+        return LocalWhisperTranscriber(name, models.LOCAL[name])
     return make
 
 
 # Imports stay inside the factories so only the chosen provider's SDK loads.
 TRANSCRIBERS: dict[str, Callable[[], Transcriber]] = {
     "gemini-3.5-transcribe": _gemini_35,
-    # Bangla fine-tune of Whisper-medium; best local model in benchmark/.
-    "local-whisper-bangla": _local("local-whisper-bangla", "bengaliAI/tugstugi_bengaliai-asr_whisper-medium", "openai/whisper-medium"),
+    **{name: _local(name) for name in models.LOCAL},
 }
 DEFAULT = "gemini-3.5-transcribe"
 
