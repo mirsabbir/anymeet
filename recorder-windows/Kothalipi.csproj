@@ -13,8 +13,8 @@
     <SelfContained>false</SelfContained>
     <!-- Lets the project compile on macOS/Linux too (it only runs on Windows). -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <AssemblyName>MeetingRecorder</AssemblyName>
-    <RootNamespace>MeetingRecorder</RootNamespace>
+    <AssemblyName>Kothalipi</AssemblyName>
+    <RootNamespace>Kothalipi</RootNamespace>
     <Version>0.1.0</Version>
   </PropertyGroup>
 

@@ -157,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .starting, .stopping: ("hourglass", nil, "")
         case .idle: (transcribing ? "text.bubble" : "record.circle", nil, "")
         }
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Meeting Recorder")
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Kothalipi")
         button.contentTintColor = tint
         button.title = title
     }
@@ -172,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Meetings…", action: #selector(openMeetings), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Meeting Recorder", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Kothalipi", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil  // keep left click as the one-click record button

@@ -1,12 +1,12 @@
 import Foundation
 
 /// App settings. Plain preferences live in UserDefaults; the glossary and the API
-/// key live in ~/Library/Application Support/MeetingRecorder (glossary.txt, .env),
+/// key live in ~/Library/Application Support/Kothalipi (glossary.txt, .env),
 /// the folder the `transcribe` command reads, so the UI and the CLI never disagree.
 enum Preferences {
     static let meetingsRoot = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Meetings")
     /// The transcriber project: the `transcriberProject` default if set
-    /// (`defaults write com.mirsabbir.meetingrecorder transcriberProject <path>`), else
+    /// (`defaults write com.mirsabbir.kothalipi transcriberProject <path>`), else
     /// the path baked in by build.sh. A CI build's baked path doesn't exist here.
     static let transcriberProject: String? = {
         let candidates = [UserDefaults.standard.string(forKey: "transcriberProject"),
@@ -34,7 +34,7 @@ enum Preferences {
     }
 
     static let configFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appending(path: "MeetingRecorder")
+        .appending(path: "Kothalipi")
 
     private static func configFile(_ name: String) -> URL? {
         try? FileManager.default.createDirectory(at: configFolder, withIntermediateDirectories: true)

@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace MeetingRecorder;
+namespace Kothalipi;
 
 /// <summary>
 /// Runs `uv run --project &lt;transcriber&gt; transcribe &lt;folder&gt;`, one run per folder

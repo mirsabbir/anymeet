@@ -64,7 +64,7 @@ export function Meetings({ initialId }: { initialId?: string }) {
         {selected ? <MeetingDetail key={selected} id={selected} query={q} /> : (
           <div className="empty">
             <h2>No meetings yet</h2>
-            <p>Click the record button in the menu bar to record your first meeting.</p>
+            <p>Click Start recording to record your first meeting.</p>
           </div>
         )}
       </main>

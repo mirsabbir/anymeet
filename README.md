@@ -1,6 +1,6 @@
-# Meeting Recorder
+# Kothalipi
 
-A bot-free meeting recorder for macOS and Windows. One click records every display, your microphone and the system audio (Zoom, Teams, Meet …) as separate files. When you stop, it writes a transcript that handles **Bangla, English and mixed Bangla-English speech**.
+*Kothalipi* (কথালিপি, "speech written down") is a bot-free meeting recorder for macOS and Windows. One click records every display, your microphone and the system audio (Zoom, Teams, Meet …) as separate files. When you stop, it writes a transcript that handles **Bangla, English and mixed Bangla-English speech**.
 
 - **No meeting bot.** Everything is captured on your own computer; recordings stay in `~/Meetings`.
 - **Speakers from tracks.** Your microphone is labelled "Me", system audio "Others".
@@ -19,16 +19,16 @@ A bot-free meeting recorder for macOS and Windows. One click records every displ
 
 ## Install on macOS
 
-Every `v*` tag builds a macOS DMG and a Windows zip with GitHub Actions and publishes them under [Releases](https://github.com/mirsabbir/bangla-meeting-recorder/releases). The app is not signed with an Apple Developer ID yet, so macOS has to be told to trust it (the `xattr` line).
+Every `v*` tag builds a macOS DMG and a Windows zip with GitHub Actions and publishes them under [Releases](https://github.com/mirsabbir/kothalipi/releases). The app is not signed with an Apple Developer ID yet, so macOS has to be told to trust it (the `xattr` line).
 
 ```bash
-cd ~/Downloads && curl -LO https://github.com/mirsabbir/bangla-meeting-recorder/releases/latest/download/MeetingRecorder-macOS.dmg
-hdiutil attach MeetingRecorder-macOS.dmg
-cp -R "/Volumes/Meeting Recorder/Meeting Recorder.app" /Applications/
-hdiutil detach "/Volumes/Meeting Recorder"
-xattr -dr com.apple.quarantine "/Applications/Meeting Recorder.app"
-defaults write com.mirsabbir.meetingrecorder transcriberProject <repo-path>/transcriber
-open "/Applications/Meeting Recorder.app"
+cd ~/Downloads && curl -LO https://github.com/mirsabbir/kothalipi/releases/latest/download/Kothalipi-macOS.dmg
+hdiutil attach Kothalipi-macOS.dmg
+cp -R "/Volumes/Kothalipi/Kothalipi.app" /Applications/
+hdiutil detach "/Volumes/Kothalipi"
+xattr -dr com.apple.quarantine "/Applications/Kothalipi.app"
+defaults write com.mirsabbir.kothalipi transcriberProject <repo-path>/transcriber
+open "/Applications/Kothalipi.app"
 ```
 
 Transcription needs a clone of this repository (the `transcriberProject` path above) plus `uv` and `ffmpeg` (`brew install uv ffmpeg`). On the first recording macOS asks for Screen Recording and Microphone access. Because the app is ad-hoc signed, it asks again after each update.
@@ -44,9 +44,9 @@ Nothing personal lives in the code. Each user's settings folder holds:
 
 | OS | Folder |
 |---|---|
-| macOS | `~/Library/Application Support/MeetingRecorder/` |
-| Windows | `%APPDATA%\MeetingRecorder\` |
-| Linux (CLI only) | `~/.config/meeting-recorder/` |
+| macOS | `~/Library/Application Support/Kothalipi/` |
+| Windows | `%APPDATA%\Kothalipi\` |
+| Linux (CLI only) | `~/.config/kothalipi/` |
 
 Both can be edited from the app: Settings → Transcription and Settings → Glossary.
 

@@ -1,4 +1,4 @@
-namespace MeetingRecorder;
+namespace Kothalipi;
 
 static class Program
 {

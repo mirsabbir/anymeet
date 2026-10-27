@@ -5,7 +5,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using NAudio.CoreAudioApi;
 
-namespace MeetingRecorder;
+namespace Kothalipi;
 
 /// <summary>
 /// The Settings and Meetings windows: the shared React UI (ui/index.html next to
@@ -57,7 +57,7 @@ sealed class WebWindow : Form
     {
         if (web.CoreWebView2 == null)
         {
-            var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingRecorder", "WebView2");
+            var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kothalipi", "WebView2");
             await web.EnsureCoreWebView2Async(await CoreWebView2Environment.CreateAsync(null, data));
             web.CoreWebView2!.WebMessageReceived += OnMessage;
         }

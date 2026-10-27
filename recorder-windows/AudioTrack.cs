@@ -3,7 +3,7 @@ using NAudio.CoreAudioApi;
 using NAudio.MediaFoundation;
 using NAudio.Wave;
 
-namespace MeetingRecorder;
+namespace Kothalipi;
 
 /// <summary>
 /// Records one audio source (the default microphone, or system audio through
