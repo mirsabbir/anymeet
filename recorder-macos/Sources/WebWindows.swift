@@ -32,6 +32,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         if let existing = windows[view] {
             if id != nil { load(existing.web, view: view, id: id) }
             existing.window.makeKeyAndOrderFront(nil)
+            existing.window.orderFrontRegardless()  // in front even when macOS declines to activate the app
             NSApp.activate()
             return
         }
@@ -50,6 +51,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         windows[view] = (window, web)
         load(web, view: view, id: id)
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()  // in front even when macOS declines to activate the app
         NSApp.activate()
     }
 
@@ -133,11 +135,30 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             return try await ModelDownloads.shared.list(refresh: p["refresh"] as? Bool ?? false)
         case "downloadModel":
             let id = p["id"] as? String ?? ""
-            guard Preferences.transcribers.contains(where: { $0["id"] as? String == id && $0["needsKey"] as? Bool == false })
+            guard id == ModelDownloads.speakerModel
+                    || Preferences.transcribers.contains(where: { $0["id"] as? String == id && $0["needsKey"] as? Bool == false })
             else { throw BridgeError("not a local model: \(id)") }
             try ModelDownloads.shared.start(id)
         case "setApiKey":
             try Preferences.setApiKey(p["key"] as? String ?? "")
+        case "setHfToken":
+            try Preferences.setHfToken(p["token"] as? String ?? "")
+        case "setSpeakers":
+            Preferences.speakers = p["on"] as? Bool ?? false
+        case "setProcessor":
+            let id = p["id"] as? String ?? ""
+            guard Preferences.processors.contains(where: { $0["id"] as? String == id && $0["available"] as? Bool == true })
+            else { throw BridgeError("can't run models on \(id)") }
+            Preferences.processor = id
+        case "renameSpeaker":
+            guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
+            if TranscriptionRunner.shared.running.contains(folder.path) { throw BridgeError("wait until the transcript is finished") }
+            _ = try await TranscriptionRunner.output(["transcribe", folder.path, "--rename-speaker", p["from"] as? String ?? "", p["to"] as? String ?? ""])
+            NotificationCenter.default.post(name: TranscriptionRunner.meetingsChanged, object: nil)
+        case "openLink":
+            guard let url = URL(string: p["url"] as? String ?? ""), url.scheme == "https", url.host == "huggingface.co"
+            else { throw BridgeError("only huggingface.co links open from here") }
+            NSWorkspace.shared.open(url)
         case "setGlossary":
             Preferences.glossary = (p["terms"] as? [String] ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         default:
@@ -166,6 +187,10 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             "transcriber": Preferences.transcriber,
             "transcribers": Preferences.transcribers,
             "apiKeySet": Preferences.apiKeySet,
+            "speakers": Preferences.speakers,
+            "hfTokenSet": Preferences.hfTokenSet,
+            "processor": Preferences.processor,
+            "processors": Preferences.processors,
             "glossary": Preferences.glossary,
             "displays": displays,
             "microphone": AVCaptureDevice.default(for: .audio)?.localizedName ?? "",

@@ -36,7 +36,34 @@ static class TranscriptionRunner
         foreach (var arg in args) info.ArgumentList.Add(arg);
         info.Environment["PYTHONIOENCODING"] = "utf-8";  // the log has Bangla text
         info.Environment["PYTHONUNBUFFERED"] = "1";  // output as it happens
+        info.Environment["ANYMEET_DEVICE"] = Preferences.Processor;  // where local models run (device.py)
         return info;
+    }
+
+    /// <summary>
+    /// The optional installs a run needs: `local` for a local Whisper model, `speakers` for
+    /// telling speakers apart, and with the GPU chosen `cuda`, so torch is the NVIDIA build.
+    /// Every run that uses torch must pass the same `cuda`, or uv swaps the 2.6 GB build out.
+    /// </summary>
+    public static string[] Extras(bool local, bool speakers)
+    {
+        var extras = new List<string>();
+        if (local) extras.AddRange(["--extra", "local"]);
+        if (speakers) extras.AddRange(["--extra", "speakers"]);
+        if ((local || speakers) && Preferences.Processor == "gpu") extras.AddRange(["--extra", "cuda"]);
+        return [.. extras];
+    }
+
+    /// <summary>Runs `uv run … &lt;args&gt;` to the end and returns its standard output.</summary>
+    public static async Task<string> Output(params string[] args)
+    {
+        using var process = Process.Start(UvStartInfo(args))!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException((await error).Trim().Split('\n').LastOrDefault() ?? "transcriber failed");
+        return await output;
     }
 
     /// <summary>Returns false when the transcriber is not set up or this folder is already running.</summary>
@@ -45,9 +72,9 @@ static class TranscriptionRunner
     {
         ui ??= SynchronizationContext.Current;
         if (Preferences.TranscriberProject == null || running.Contains(folder)) return false;
-        // Local models need the optional torch/transformers install; uv adds it on first use.
-        var extra = Preferences.Transcriber.StartsWith("local-") ? new[] { "--extra", "local" } : [];
-        var info = UvStartInfo([.. extra, "transcribe", folder, .. live ? new[] { "--live" } : []]);
+        var speakers = Preferences.Speakers;
+        var info = UvStartInfo([.. Extras(Preferences.Transcriber.StartsWith("local-"), speakers), "transcribe", folder,
+                                .. live ? new[] { "--live" } : [], .. speakers ? new[] { "--speakers" } : []]);
         info.Environment["TRANSCRIBER"] = Preferences.Transcriber;
 
         var log = new StreamWriter(Path.Combine(folder, "transcribe.log")) { AutoFlush = true };

@@ -7,6 +7,7 @@ import Foundation
 final class ModelDownloads {
     static let shared = ModelDownloads()
     static let changed = Notification.Name("ModelsChanged")
+    static let speakerModel = "speakers-pyannote"
 
     private var downloaded: [String: Bool] = [:]
     private var progress: [String: (done: Int64, total: Int64)] = [:]
@@ -18,7 +19,7 @@ final class ModelDownloads {
     /// second); otherwise the last answer is reused, since progress events ask often.
     func list(refresh: Bool) async throws -> [[String: Any]] {
         if refresh || downloaded.isEmpty {
-            let items = try JSONSerialization.jsonObject(with: try await Self.output(["transcribe", "--models"])) as? [[String: Any]] ?? []
+            let items = try JSONSerialization.jsonObject(with: try await TranscriptionRunner.output(["transcribe", "--models"])) as? [[String: Any]] ?? []
             for item in items { if let id = item["id"] as? String { downloaded[id] = item["downloaded"] as? Bool ?? false } }
         }
         return downloaded.keys.sorted().map { id in
@@ -31,8 +32,9 @@ final class ModelDownloads {
 
     func start(_ id: String) throws {
         guard progress[id] == nil else { return }
-        // --extra local also installs torch and transformers, so the model is ready to use after this.
-        let process = try TranscriptionRunner.uvProcess(["--extra", "local", "transcribe", "--download", id])
+        // The model's optional install comes first (torch with transformers or pyannote), so it is ready to use after this.
+        let extras = TranscriptionRunner.extras(local: id != Self.speakerModel, speakers: id == Self.speakerModel)
+        let process = try TranscriptionRunner.uvProcess(extras + ["transcribe", "--download", id])
         let out = Pipe(), err = Pipe()
         process.standardOutput = out
         process.standardError = err
@@ -88,22 +90,5 @@ final class ModelDownloads {
         self.progress[id] = progress
         errors[id] = error
         NotificationCenter.default.post(name: Self.changed, object: nil)
-    }
-
-    /// Runs `uv run … <args>` to the end and returns its standard output.
-    private static func output(_ args: [String]) async throws -> Data {
-        let process = try TranscriptionRunner.uvProcess(args)
-        let out = Pipe(), err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        return try await withCheckedThrowingContinuation { done in
-            process.terminationHandler = { p in
-                let data = out.fileHandleForReading.readDataToEndOfFile()
-                if p.terminationStatus == 0 { return done.resume(returning: data) }
-                let reason = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                done.resume(throwing: BridgeError(reason.split(separator: "\n").last.map(String.init) ?? "transcriber failed"))
-            }
-            do { try process.run() } catch { done.resume(throwing: error) }
-        }
     }
 }

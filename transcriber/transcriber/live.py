@@ -10,6 +10,11 @@ the same way as after the meeting (audio.plan_segments). A chunk is sent to the
 provider as soon as it is followed by a long enough pause, so text arrives during
 the meeting; transcript.md/.json are rewritten after every chunk. When `done`
 appears the rest is sent, the final transcript is written and live/ is removed.
+
+With speaker identification on, "Others" stays one label during the meeting: telling
+voices apart needs the whole recording. After `done`, the system audio is diarized
+once; a chunk with one speaker is relabelled, a chunk with several is cut where the
+speaker changes and only its pieces are transcribed again.
 """
 import shutil
 import struct
@@ -19,10 +24,11 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
-from . import audio, pipeline
+from . import audio, pipeline, speakers
 from .base import Transcriber
 
 RATE = 16_000
@@ -157,9 +163,10 @@ def _flac(samples: np.ndarray, path: Path) -> Path:
     return path
 
 
-def run(folder: Path, speakers: dict[str, str], t: Transcriber, glossary: list[str],
-        workers: int = 8, poll: float = POLL) -> int:
-    """Transcribe <folder>/live/*.wav as they grow. Returns the number of failed chunks."""
+def run(folder: Path, labels: dict[str, str], t: Transcriber, glossary: list[str], workers: int = 8,
+        poll: float = POLL, diarize: Callable[[Path], list[speakers.Turn]] | None = None) -> int:
+    """Transcribe <folder>/live/*.wav as they grow; labels maps a file's stem to its
+    speaker. Returns the number of failed chunks."""
     live = folder / "live"
     tracks: dict[str, Track] = {}
     jobs: list[tuple[pipeline.Segment, Future]] = []
@@ -179,13 +186,13 @@ def run(folder: Path, speakers: dict[str, str], t: Transcriber, glossary: list[s
             finished = (live / "done").exists()
             for path in sorted(live.glob("*.wav")) if live.exists() else []:
                 with lock:
-                    track = tracks.setdefault(path.stem, Track(path, speakers.get(path.stem, path.stem)))
+                    track = tracks.setdefault(path.stem, Track(path, labels.get(path.stem, path.stem)))
                 new = track.wav.read_new()
                 if len(new):
                     track.pending = np.concatenate([track.pending, new])
                     last_audio = time.monotonic()
                 for a, b, clip in track.ready_segments(finished):
-                    seg = pipeline.Segment(track.speaker, a, b)
+                    seg = pipeline.Segment(track.speaker, a, b, track=path.stem)
                     future = pool.submit(pipeline._transcribe, t, seg, _flac(clip, Path(tmp) / f"{n:05d}.flac"), glossary)
                     with lock:
                         jobs.append((seg, future))
@@ -197,9 +204,42 @@ def run(folder: Path, speakers: dict[str, str], t: Transcriber, glossary: list[s
             time.sleep(poll)
         for _, future in jobs:
             future.result()
+        if diarize:
+            for stem, track in tracks.items():
+                if track.speaker == pipeline.OTHERS:
+                    redo = _split_speakers(live / f"{stem}.wav", jobs, diarize, Path(tmp),
+                                           lambda seg, clip: pool.submit(pipeline._transcribe, t, seg, clip, glossary))
+                    with lock:
+                        jobs.extend(redo)
+                    for _, future in redo:
+                        future.result()
     failed = write()
     shutil.rmtree(live, ignore_errors=True)
     return failed
+
+
+def _split_speakers(src: Path, jobs: list[tuple[pipeline.Segment, Future]],
+                    diarize: Callable[[Path], list[speakers.Turn]], tmp: Path,
+                    submit: Callable[[pipeline.Segment, Path], Future]) -> list[tuple[pipeline.Segment, Future]]:
+    """Gives the OTHERS chunks of this track their speakers. Returns the transcriptions
+    started for chunks that had to be cut; the cut chunks themselves are emptied, so
+    the transcript drops them once their pieces are in."""
+    wav = audio.to_wav(src, tmp / f"{src.stem}-speakers.wav")
+    total = audio.duration(wav)
+    turns = diarize(wav)
+    redo = []
+    for k, (seg, _) in enumerate(list(jobs)):
+        if seg.speaker != pipeline.OTHERS or seg.track != src.stem:
+            continue
+        pieces = speakers.split(seg.start, seg.end, turns, seg.speaker)
+        if len(pieces) == 1:
+            seg.speaker = pieces[0][2]
+            continue
+        for j, (a, b, who) in enumerate(pieces):
+            piece = pipeline.Segment(who, a, b, track=seg.track)
+            redo.append((piece, submit(piece, audio.cut(wav, a, b, total, tmp / f"speakers-{k:05d}-{j}.flac"))))
+        seg.text = seg.failed = ""
+    return redo
 
 
 def audio_clock(seconds: float) -> str:

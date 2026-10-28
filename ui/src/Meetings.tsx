@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { call, on } from './bridge'
 import { clock, dateTime, dayLabel, duration, time } from './format'
 import { Icon } from './icons'
@@ -8,7 +8,14 @@ import type { Meeting, MeetingFile, MeetingSummary, Segment, TranscriptStatus } 
 
 /** What the in-app player shows; n changes on every request, so the same time can be played twice. */
 type Playing = { file: MeetingFile; at: number; n: number }
-const TRACK_OF: Record<string, string> = { Me: 'mic', Others: 'system' }
+const TRACK_OF: Record<string, string> = { Me: 'mic', Others: 'system' } // transcripts without `track`
+const TONES = ['others', 'tone2', 'tone3', 'tone4', 'tone5']
+
+/** Each speaker's colour: "Me" keeps the accent, the others take tones in order of first words. */
+function speakerTones(segments: Segment[]): Map<string, string> {
+  const others = [...new Set(segments.map((s) => s.speaker))].filter((name) => name !== 'Me')
+  return new Map(others.map((name, i) => [name, TONES[i % TONES.length]]))
+}
 
 const STATUS: Record<TranscriptStatus, [string, string]> = {
   done: ['ok', 'Transcript ready'],
@@ -114,10 +121,10 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
   const failed = meeting.segments.filter((s) => s.failed).length
   const play = (file: MeetingFile, at = 0) =>
     file.url ? setPlaying((p) => ({ file, at, n: (p?.n ?? 0) + 1 })) : call('openPath', { path: file.path })
-  // A segment plays from its speaker's own track: Me → mic, Others → system.
+  // A segment plays from the track it was heard on (mic or system), whatever its speaker is called now.
   const playSegment = (s: Segment) => {
     const audio = meeting.files.filter((f) => f.kind === 'audio')
-    const file = audio.find((f) => f.name.split('.')[0] === (TRACK_OF[s.speaker] ?? s.speaker)) ?? audio[0]
+    const file = audio.find((f) => f.name.split('.')[0] === (s.track ?? TRACK_OF[s.speaker] ?? s.speaker)) ?? audio[0]
     if (file) play(file, s.start)
   }
   const transcribe = () => call('transcribe', { id }).then(load)
@@ -159,6 +166,7 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
             {deleteError && <span className="small" style={{ flexBasis: '100%', color: 'var(--warn)' }}>{deleteError}</span>}
           </div>
         </header>
+        <SpeakerNames meeting={meeting} onRenamed={load} />
         {playing && <Player key={playing.file.name} {...playing} onClose={() => setPlaying(undefined)} />}
         <Transcript meeting={meeting} query={query} onTranscribe={transcribe} onPlay={playSegment} />
       </div>
@@ -205,6 +213,52 @@ function Player({ file, at, n, onClose }: Playing & { onClose: () => void }) {
   )
 }
 
+/** The people in this transcript; click one to rename it everywhere. A name that's already used merges the two. */
+function SpeakerNames({ meeting, onRenamed }: { meeting: Meeting; onRenamed: () => void }) {
+  const [editing, setEditing] = useState<string>()
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  const handled = useRef(false) // Enter, then the blur as the field goes away: rename once
+  const tones = speakerTones(meeting.segments)
+  const names = [...new Set(meeting.segments.map((s) => s.speaker))]
+  if (names.length === 0) return null
+  const busy = meeting.status === 'transcribing'
+
+  const start = (name: string) => { handled.current = false; setEditing(name); setValue(name); setError('') }
+  const save = async (e?: FormEvent) => {
+    e?.preventDefault()
+    if (handled.current || !editing) return
+    handled.current = true
+    const to = value.trim()
+    setEditing(undefined)
+    if (!to || to === editing) return
+    try {
+      await call('renameSpeaker', { id: meeting.id, from: editing, to })
+      onRenamed()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  return (
+    <div className="speakers" role="group" aria-label="Speakers">
+      <span className="small muted">{busy ? 'Speakers · rename once the transcript is finished' : 'Speakers · click a name to rename it'}</span>
+      {names.map((name) => editing === name ? (
+        <form key={name} onSubmit={save}>
+          <label htmlFor="rename" className="visually-hidden">New name for {name}</label>
+          <input id="rename" className="rename" autoFocus value={value} onFocus={(e) => e.target.select()} onChange={(e) => setValue(e.target.value)}
+            onBlur={() => save()} onKeyDown={(e) => { if (e.key === 'Escape') { handled.current = true; setEditing(undefined) } }} />
+        </form>
+      ) : (
+        <button key={name} className={`who ${tones.get(name) ?? ''}`} disabled={busy} onClick={() => start(name)} aria-label={`Rename ${name}`}>
+          {name}<Icon name="pencil" />
+        </button>
+      ))}
+      {error && <span className="small" style={{ color: 'var(--warn)' }}>{error}</span>}
+    </div>
+  )
+}
+
 function Transcript({ meeting, query, onTranscribe, onPlay }: { meeting: Meeting; query: string; onTranscribe: () => void; onPlay: (s: Segment) => void }) {
   if (meeting.status === 'transcribing' && meeting.segments.length === 0) {
     return <div className="empty"><div className="spinner" /><h2>Transcribing…</h2><p>Text shows up here as each part is done.</p></div>
@@ -219,15 +273,16 @@ function Transcript({ meeting, query, onTranscribe, onPlay }: { meeting: Meeting
       </div>
     )
   }
+  const tones = speakerTones(meeting.segments)
   return (
     <section className="transcript" aria-label="Transcript">
-      {meeting.segments.map((s, i) => <SegmentRow key={i} s={s} query={query} onRetry={onTranscribe} onPlay={onPlay} />)}
+      {meeting.segments.map((s, i) => <SegmentRow key={i} s={s} tone={tones.get(s.speaker) ?? ''} query={query} onRetry={onTranscribe} onPlay={onPlay} />)}
       {meeting.status === 'transcribing' && <p className="live-note small muted"><span className="spinner small-spinner" />Transcribing… new text appears as each part is done</p>}
     </section>
   )
 }
 
-function SegmentRow({ s, query, onRetry, onPlay }: { s: Segment; query: string; onRetry: () => void; onPlay: (s: Segment) => void }) {
+function SegmentRow({ s, tone, query, onRetry, onPlay }: { s: Segment; tone: string; query: string; onRetry: () => void; onPlay: (s: Segment) => void }) {
   return (
     <div className="segment">
       <button className="at" onClick={() => onPlay(s)} title="Play from here" aria-label={`Play from ${clock(s.start)}`}><Icon name="play" />{clock(s.start)}</button>
@@ -239,7 +294,7 @@ function SegmentRow({ s, query, onRetry, onPlay }: { s: Segment; query: string; 
         </div>
       ) : (
         <div style={{ flex: 1 }}>
-          <span className={`who ${s.speaker === 'Me' ? '' : 'others'}`}>{s.speaker}</span>
+          <span className={`who ${tone}`}>{s.speaker}</span>
           <p lang="bn">{highlight(s.text, query)}</p>
         </div>
       )}

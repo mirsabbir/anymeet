@@ -12,6 +12,9 @@ namespace AnyMeet;
 /// </summary>
 static class ModelDownloads
 {
+    public const string SpeakerModel = "speakers-pyannote";
+    public const string GpuSupport = "gpu-support";  // PyTorch for NVIDIA cards: installed by uv, then checked with `transcribe --device`
+
     static readonly Dictionary<string, bool> downloaded = new();
     static readonly Dictionary<string, (long Done, long Total)> progress = new();
     static readonly Dictionary<string, string> errors = new();
@@ -22,7 +25,7 @@ static class ModelDownloads
     {
         if (refresh || downloaded.Count == 0)
         {
-            foreach (var item in JsonNode.Parse(await Output("transcribe", "--models"))?.AsArray() ?? new())
+            foreach (var item in JsonNode.Parse(await TranscriptionRunner.Output("transcribe", "--models"))?.AsArray() ?? new())
                 if (item?["id"]?.GetValue<string>() is { } id) downloaded[id] = item["downloaded"]?.GetValue<bool>() ?? false;
         }
         return downloaded.Keys.Order().Select(id =>
@@ -38,8 +41,10 @@ static class ModelDownloads
     {
         if (progress.ContainsKey(id)) return;
         ui ??= SynchronizationContext.Current;
-        // --extra local also installs torch and transformers, so the model is ready to use after this.
-        var process = new Process { StartInfo = TranscriptionRunner.UvStartInfo("--extra", "local", "transcribe", "--download", id) };
+        // The model's optional install comes first (torch with transformers or pyannote), so it is ready to use after this.
+        string[] args = id == GpuSupport ? [.. TranscriptionRunner.Extras(local: true, speakers: false), "transcribe", "--device"]
+            : [.. TranscriptionRunner.Extras(local: id != SpeakerModel, speakers: id == SpeakerModel), "transcribe", "--download", id];
+        var process = new Process { StartInfo = TranscriptionRunner.UvStartInfo(args) };
         var lastError = "";
         process.OutputDataReceived += (_, e) =>
         {
@@ -78,17 +83,5 @@ static class ModelDownloads
         if (now is { } p) progress[id] = p; else progress.Remove(id);
         if (error != null) errors[id] = error; else errors.Remove(id);
         WebWindow.Emit("modelsChanged");
-    }
-
-    /// <summary>Runs `uv run … &lt;args&gt;` to the end and returns its standard output.</summary>
-    static async Task<string> Output(params string[] args)
-    {
-        using var process = Process.Start(TranscriptionRunner.UvStartInfo(args))!;
-        var output = process.StandardOutput.ReadToEndAsync();
-        var error = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException((await error).Trim().Split('\n').LastOrDefault() ?? "transcriber failed");
-        return await output;
     }
 }

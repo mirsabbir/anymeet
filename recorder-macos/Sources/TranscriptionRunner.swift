@@ -31,8 +31,33 @@ final class TranscriptionRunner {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = (toolFolders + [env["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
         env["PYTHONUNBUFFERED"] = "1"  // output as it happens, not only at the end
+        env["ANYMEET_DEVICE"] = Preferences.processor  // where local models run (device.py)
         process.environment = env
         return process
+    }
+
+    /// The optional installs a run needs: `local` for a local Whisper model, `speakers`
+    /// for telling speakers apart. uv adds them on first use.
+    static func extras(local: Bool, speakers: Bool) -> [String] {
+        (local ? ["--extra", "local"] : []) + (speakers ? ["--extra", "speakers"] : [])
+    }
+
+    /// Runs `uv run … <args>` to the end and returns its standard output; throws with the
+    /// transcriber's last line of errors when it fails.
+    static func output(_ args: [String]) async throws -> Data {
+        let process = try uvProcess(args)
+        let out = Pipe(), err = Pipe()
+        process.standardOutput = out
+        process.standardError = err
+        return try await withCheckedThrowingContinuation { done in
+            process.terminationHandler = { p in
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                if p.terminationStatus == 0 { return done.resume(returning: data) }
+                let reason = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                done.resume(throwing: BridgeError(reason.split(separator: "\n").last.map(String.init) ?? "transcriber failed"))
+            }
+            do { try process.run() } catch { done.resume(throwing: error) }
+        }
     }
 
     /// Returns false when the transcriber can't run or this folder is already running.
@@ -47,10 +72,11 @@ final class TranscriptionRunner {
             return false
         }
         guard !running.contains(folder.path) else { lastError = "already transcribing"; return false }
-        // Local models need the optional torch/transformers install; uv adds it on first use.
-        let extra = Preferences.transcriber.hasPrefix("local-") ? ["--extra", "local"] : []
+        let speakers = Preferences.speakers
+        let args = Self.extras(local: Preferences.transcriber.hasPrefix("local-"), speakers: speakers)
+            + ["transcribe", folder.path] + (live ? ["--live"] : []) + (speakers ? ["--speakers"] : [])
         let process: Process
-        do { process = try Self.uvProcess(extra + ["transcribe", folder.path] + (live ? ["--live"] : [])) } catch { return fail(error.localizedDescription) }
+        do { process = try Self.uvProcess(args) } catch { return fail(error.localizedDescription) }
         guard Self.find("ffmpeg") != nil else { return fail("ffmpeg not found: install it with `brew install ffmpeg`") }
         process.environment?["TRANSCRIBER"] = Preferences.transcriber
         FileManager.default.createFile(atPath: log.path, contents: nil)

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { call, on } from './bridge'
 import { bytes } from './format'
 import { Icon, type IconName } from './icons'
-import type { ModelState, Settings as SettingsData, TranscribeMode, Transcriber } from './types'
+import type { ModelState, Processor, Settings as SettingsData, TranscribeMode, Transcriber } from './types'
 import { InstallButton, useUpdate } from './Update'
 
 const TABS: [Tab, string, IconName][] = [
@@ -17,6 +17,10 @@ const MODES: [TranscribeMode, string, string][] = [
   ['off', 'Off', 'Transcribe later from the meeting page'],
 ]
 type Tab = 'recording' | 'transcription' | 'glossary' | 'about'
+const SPEAKER_MODEL = 'speakers-pyannote'
+const SPEAKER_MODEL_PAGE = 'https://huggingface.co/pyannote/speaker-diarization-community-1'
+const TOKENS_PAGE = 'https://huggingface.co/settings/tokens'
+const GPU_SUPPORT = 'gpu-support' // Windows only: PyTorch for NVIDIA cards
 
 export function Settings({ initialTab }: { initialTab?: string }) {
   const [tab, setTab] = useState<Tab>(TABS.some(([id]) => id === initialTab) ? (initialTab as Tab) : 'recording')
@@ -150,26 +154,120 @@ function Transcription({ s, reload }: { s: SettingsData; reload: () => void }) {
           <div className="label"><div>Languages</div><div className="small muted">Switching language mid-sentence is fine</div></div>
           <div className="chips"><span className="pill none">Bangla</span><span className="pill none">English</span></div>
         </div>
+        <div className="row" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div className="label"><div>Run local models on</div><div className="small muted">Local Whisper and telling speakers apart</div></div>
+          <Processors s={s} models={models} reload={reload} />
+        </div>
       </div>
+
+      <h2>Speakers</h2>
+      <p className="small muted">Your microphone is always “Me”. Everyone else is in the system audio.</p>
+      <Speakers s={s} model={models.find((m) => m.id === SPEAKER_MODEL)} reload={reload} />
     </div>
   )
 }
 
+function Processors({ s, models, reload }: { s: SettingsData; models: ModelState[]; reload: () => void }) {
+  const gpuSupport = models.find((m) => m.id === GPU_SUPPORT)
+  const choose = async (p: Processor) => {
+    await call('setProcessor', { id: p.id })
+    if (p.id === 'gpu' && gpuSupport && !gpuSupport.downloaded && !gpuSupport.progress) await call('downloadModel', { id: GPU_SUPPORT })
+    reload()
+  }
+  return (
+    <div className="modes" role="radiogroup" aria-label="Run local models on">
+      {s.processors.map((p) => (
+        <button key={p.id} role="radio" aria-checked={s.processor === p.id} className="mode" disabled={!p.available} onClick={() => choose(p)}>
+          <span className="mode-title">{p.id === 'gpu' ? 'Graphics card (GPU)' : 'Processor (CPU)'} · {p.name}</span>
+          <span className="small muted">{p.note}</span>
+          {p.id === 'gpu' && p.available && gpuSupport && <Download m={gpuSupport} />}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function Speakers({ s, model, reload }: { s: SettingsData; model?: ModelState; reload: () => void }) {
+  const [token, setToken] = useState('')
+  const [saved, setSaved] = useState(false)
+  const download = () => call('downloadModel', { id: SPEAKER_MODEL })
+  const needsDownload = model && !model.downloaded && !model.progress
+
+  const toggle = async () => {
+    await call('setSpeakers', { on: !s.speakers })
+    if (!s.speakers && s.hfTokenSet && needsDownload) await download()
+    reload()
+  }
+  const saveToken = async (e: FormEvent) => {
+    e.preventDefault()
+    await call('setHfToken', { token: token.trim() })
+    setToken('')
+    setSaved(true)
+    if (needsDownload) await download()
+    reload()
+  }
+
+  return (
+    <>
+      <div className="rows">
+        <div className="row">
+          <div className="label">
+            <div>Tell speakers apart</div>
+            <div className="small muted">Splits “Others” into Speaker 1, Speaker 2… by voice, on this computer, when the meeting ends. Rename them on the meeting page.</div>
+          </div>
+          <button role="switch" aria-checked={s.speakers} aria-label="Tell speakers apart" className="switch" onClick={toggle}><span /></button>
+        </div>
+        {s.speakers && model && (
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <div className="label"><div>Speaker model</div><div className="small muted">pyannote community-1 · about 33 MB · free</div></div>
+            {model.progress ? <div style={{ flex: '1 1 220px' }}><Download m={model} /></div>
+              : model.downloaded ? <span className="small" style={{ color: 'var(--ok)', display: 'inline-flex', gap: 6 }}><Icon name="check" />Downloaded</span>
+              : <button className="btn" onClick={download} disabled={!s.hfTokenSet}><Icon name="download" />{model.error ? 'Try again' : 'Download'}</button>}
+          </div>
+        )}
+      </div>
+      {s.speakers && model?.error && !model.progress && <div className="note bad">Download failed: {model.error}</div>}
+      {s.speakers && model && !model.downloaded && (
+        <div className="setup">
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>One-time setup with a free Hugging Face account</div>
+          <ol>
+            <li>Sign in and accept the model’s terms: <button className="link" onClick={() => call('openLink', { url: SPEAKER_MODEL_PAGE })}>pyannote/speaker-diarization-community-1</button></li>
+            <li>Create a token of type “Read”: <button className="link" onClick={() => call('openLink', { url: TOKENS_PAGE })}>huggingface.co/settings/tokens</button></li>
+            <li>Paste the token here. The model then downloads, and after that it works offline.</li>
+          </ol>
+          <form onSubmit={saveToken}>
+            <label htmlFor="hf-token" className="visually-hidden">Hugging Face token</label>
+            <div className="field">
+              <input id="hf-token" type="password" autoComplete="off" value={token} onChange={(e) => { setToken(e.target.value); setSaved(false) }}
+                placeholder={s.hfTokenSet ? 'A token is saved. Paste a new one to replace it' : 'Paste your Hugging Face token (hf_…)'} />
+              <button className="btn dark" type="submit" disabled={!token.trim()}>Save token</button>
+            </div>
+          </form>
+          {(saved || s.hfTokenSet) && <div className="note ok" style={{ marginBottom: 0 }}>{saved ? 'Token saved.' : 'A token is saved on this computer.'}</div>}
+        </div>
+      )}
+    </>
+  )
+}
+
 function Download({ m }: { m: ModelState }) {
+  const gpu = m.id === GPU_SUPPORT // installed by uv in one go, so there are no byte counts
   if (m.progress) {
     const { done, total } = m.progress
     const pct = total ? Math.floor((100 * done) / total) : 0
     return (
       <div className="download">
-        <div className="small">{total ? `Downloading ${pct}% · ${bytes(done)} of ${bytes(total)}` : 'Getting ready to download…'}</div>
+        <div className="small">{total ? `Downloading ${pct}% · ${bytes(done)} of ${bytes(total)}`
+          : gpu ? 'Installing GPU support (about 2.6 GB, once). This can take a while…' : 'Getting ready to download…'}</div>
         <div className="bar" role="progressbar" aria-label={`Downloading ${m.id}`} aria-valuenow={pct}><span style={{ width: `${pct}%` }} /></div>
       </div>
     )
   }
-  if (m.downloaded) return <div className="download small ok"><Icon name="check" />Downloaded</div>
+  if (m.downloaded) return <div className="download small ok"><Icon name="check" />{gpu ? 'GPU support installed' : 'Downloaded'}</div>
   return (
     <div className={`download small ${m.error ? 'bad' : 'muted'}`}>
-      <Icon name="download" />{m.error ? `Download failed: ${m.error} · click to try again` : 'Not downloaded · click to download'}
+      <Icon name="download" />{m.error ? `${gpu ? 'Install' : 'Download'} failed: ${m.error} · click to try again`
+        : gpu ? 'GPU support not installed · click to install (about 2.6 GB)' : 'Not downloaded · click to download'}
     </div>
   )
 }

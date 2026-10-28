@@ -137,11 +137,34 @@ sealed class WebWindow : Form
             case "getModels":
                 return await ModelDownloads.List(p["refresh"]?.GetValue<bool>() ?? false);
             case "downloadModel":
-                if (!Str("id").StartsWith("local-") || !Preferences.AvailableTranscribers.Contains(Str("id"))) throw new InvalidOperationException("not a local model");
+                var local = Str("id").StartsWith("local-") && Preferences.AvailableTranscribers.Contains(Str("id"));
+                if (!local && Str("id") is not (ModelDownloads.SpeakerModel or ModelDownloads.GpuSupport)) throw new InvalidOperationException("not a local model");
+                if (Str("id") == ModelDownloads.GpuSupport && Preferences.Processor != "gpu") throw new InvalidOperationException("choose the graphics card first");
                 ModelDownloads.Start(Str("id"));
                 return null;
             case "setApiKey":
                 Preferences.SetApiKey(Str("key"));
+                return null;
+            case "setHfToken":
+                Preferences.SetHfToken(Str("token"));
+                return null;
+            case "setSpeakers":
+                Preferences.Speakers = p["on"]?.GetValue<bool>() ?? false;
+                return null;
+            case "setProcessor":
+                if (Str("id") is not ("gpu" or "cpu") || (Str("id") == "gpu" && Preferences.NvidiaGpu == null)) throw new InvalidOperationException($"can't run models on {Str("id")}");
+                Preferences.Processor = Str("id");
+                return null;
+            case "renameSpeaker":
+                var renamed = MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found");
+                if (TranscriptionRunner.IsRunning(renamed)) throw new InvalidOperationException("wait until the transcript is finished");
+                await TranscriptionRunner.Output("transcribe", renamed, "--rename-speaker", Str("from"), Str("to"));
+                TranscriptionRunner.RaiseMeetingsChanged();
+                return null;
+            case "openLink":
+                if (!Uri.TryCreate(Str("url"), UriKind.Absolute, out var link) || link.Scheme != "https" || link.Host != "huggingface.co")
+                    throw new InvalidOperationException("only huggingface.co links open from here");
+                Process.Start(new ProcessStartInfo(link.AbsoluteUri) { UseShellExecute = true });
                 return null;
             case "setGlossary":
                 Preferences.Glossary = (p["terms"] as JsonArray ?? new()).Select(t => t?.GetValue<string>().Trim() ?? "").Where(t => t.Length > 0).ToList();
@@ -173,6 +196,10 @@ sealed class WebWindow : Form
             transcriber = Preferences.Transcriber,
             transcribers = Preferences.Transcribers,
             apiKeySet = Preferences.ApiKeySet,
+            speakers = Preferences.Speakers,
+            hfTokenSet = Preferences.HfTokenSet,
+            processor = Preferences.Processor,
+            processors = Preferences.Processors,
             glossary = Preferences.Glossary,
             displays = Screen.AllScreens.Select(s => $"{s.DeviceName.TrimStart('\\', '.')} · {s.Bounds.Width}×{s.Bounds.Height}").ToList(),
             microphone,

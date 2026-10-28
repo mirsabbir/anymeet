@@ -193,3 +193,28 @@ a.tab { color: var(--ink); text-decoration: none; }
 .note.ok { color: var(--ok); }
 .note.bad { color: var(--warn); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Speakers: one colour each, renamed from the bar above the transcript. */
+.who.tone2 { color: #115E59; background: #CCFBF1; }
+.who.tone3 { color: #6B21A8; background: #F3E8FF; }
+.who.tone4 { color: #9F1239; background: #FFE4E6; }
+.who.tone5 { color: #3F6212; background: #ECFCCB; }
+.speakers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 32px; border-bottom: 1px solid var(--line); }
+.speakers .who { border: 0; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.speakers .who .icon { width: 12px; height: 12px; opacity: .6; }
+.speakers .who:hover .icon { opacity: 1; }
+.speakers .who:disabled { cursor: default; opacity: .6; }
+.speakers .rename { height: 26px; width: 180px; border: 2px solid var(--accent); border-radius: 99px; padding: 0 10px; font-size: 12px; font-weight: 600; }
+
+/* Settings: sections, on/off switch, setup steps, links that open the browser. */
+.page h2 { font-size: 16px; margin: 30px 0 4px; }
+.page h2 + p { margin-top: 0; }
+.switch { position: relative; width: 44px; height: 26px; flex-shrink: 0; border: 0; border-radius: 99px; background: #D4D4CF; padding: 0; transition: background .15s; }
+.switch span { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: left .15s; }
+.switch[aria-checked='true'] { background: var(--accent); }
+.switch[aria-checked='true'] span { left: 21px; }
+.setup { margin: 12px 0 0; padding: 14px 16px; border-radius: var(--radius); background: var(--ground); }
+.setup ol { margin: 0 0 12px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.link { border: 0; padding: 0; background: none; color: var(--accent); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+.mode:disabled { cursor: default; background: var(--ground); }
+.mode .download { margin-top: 8px; padding-top: 8px; }

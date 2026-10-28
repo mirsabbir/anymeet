@@ -17,11 +17,14 @@ extension Recorder: Capture {}
 
 /// Writes a short spoken WAV as mic.wav, so the self-test exercises everything except
 /// screen capture (which needs a permission a test run can't grant itself).
+/// `--fake-system <wav>` also plays that WAV (16 kHz mono PCM-16) as the system audio.
 final class FakeCapture: Capture {
     var onStreamError: ((Error) -> Void)?
     private var folder: URL?
-    private var feeder: Task<Void, Never>?
+    private var feeders: [Task<Void, Never>] = []
     private let speech = FileManager.default.temporaryDirectory.appending(path: "anymeet-selftest-speech.wav")
+    static let systemClip: URL? = CommandLine.arguments.firstIndex(of: "--fake-system")
+        .flatMap { $0 + 1 < CommandLine.arguments.count ? URL(filePath: CommandLine.arguments[$0 + 1]) : nil }
 
     func start(in folder: URL, live: Bool) async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -33,11 +36,15 @@ final class FakeCapture: Capture {
         try say.run()
         say.waitUntilExit()
         guard live else { return }
-        // Feed live/mic.wav at real-time pace (16 kHz × 2 bytes), then keep adding
-        // silence, like a microphone in a quiet room, until the recording stops.
-        let target = folder.appending(path: "live/mic.wav")
-        let audio = (try? Data(contentsOf: speech)) ?? Data()
-        feeder = Task.detached {
+        feeders = [Self.feed(speech, to: folder.appending(path: "live/mic.wav"))]
+        if let clip = Self.systemClip { feeders.append(Self.feed(clip, to: folder.appending(path: "live/system.wav"))) }
+    }
+
+    /// Writes a 16 kHz PCM-16 WAV to `target` at real-time pace, then keeps adding silence,
+    /// like a microphone in a quiet room, until the recording stops.
+    private static func feed(_ source: URL, to target: URL) -> Task<Void, Never> {
+        let audio = (try? Data(contentsOf: source)) ?? Data()
+        return Task.detached {
             try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             FileManager.default.createFile(atPath: target.path, contents: nil)
             guard let out = try? FileHandle(forWritingTo: target) else { return }
@@ -64,9 +71,11 @@ final class FakeCapture: Capture {
 
     func stop() async -> [String] {
         guard let folder else { return ["no folder"] }
-        feeder?.cancel()
-        await feeder?.value
-        do { try FileManager.default.copyItem(at: speech, to: folder.appending(path: "mic.wav")) } catch { return ["\(error)"] }
+        for feeder in feeders { feeder.cancel(); await feeder.value }
+        do {
+            try FileManager.default.copyItem(at: speech, to: folder.appending(path: "mic.wav"))
+            if let clip = Self.systemClip { try FileManager.default.copyItem(at: clip, to: folder.appending(path: "system.wav")) }
+        } catch { return ["\(error)"] }
         return []
     }
 }
@@ -102,6 +111,10 @@ enum SelfTest {
 
         if let i = CommandLine.arguments.firstIndex(of: "--download-test"), i + 1 < CommandLine.arguments.count {
             await downloadTest(CommandLine.arguments[i + 1], check)
+            finish(checks, report)
+        }
+        if CommandLine.arguments.contains("--speakers-test") {
+            await speakersRecordingTest(app, report: report, check, wait)
             finish(checks, report)
         }
 
@@ -279,7 +292,109 @@ enum SelfTest {
         pasteboard.clearContents()
         if let saved { pasteboard.setString(saved, forType: .string) }
 
+        await speakersTest(check)
         finish(checks, report)
+    }
+
+    /// `--speakers-test --fake-capture --fake-system <wav>`: records the WAV as system audio, once
+    /// transcribed after the meeting and once live, with "Tell speakers apart" on (needs the
+    /// model downloaded). "Others" must come out as Speaker 1, Speaker 2…; each transcript is
+    /// copied next to the report as speakers-<mode>.json for scoring.
+    private static func speakersRecordingTest(_ app: AppDelegate, report: URL, _ check: (String, Bool, String) -> Void,
+                                              _ wait: (Double, () -> Bool) async -> Bool) async {
+        guard let clip = FakeCapture.systemClip, fakeCapture else { return check("speakers: --fake-capture --fake-system <wav> given", false, "") }
+        guard Preferences.speakers else { return check("speakers: Tell speakers apart is on in Settings", false, "") }
+        let savedMode = UserDefaults.standard.string(forKey: "transcribeMode")
+        defer { if let savedMode { Preferences.transcribeMode = savedMode } else { UserDefaults.standard.removeObject(forKey: "transcribeMode") } }
+        let clipSeconds = Double((try? FileManager.default.attributesOfItem(atPath: clip.path)[.size] as? Int) ?? 0) / 32_000
+        for mode in ["after", "live"] {
+            Preferences.transcribeMode = mode
+            app.simulateStatusItemClick()
+            guard await wait(10, { app.isRecording }), let folder = app.currentFolder else {
+                check("speakers \(mode): recording started", false, ""); continue
+            }
+            try? await Task.sleep(for: .seconds(mode == "live" ? clipSeconds + 3 : 2))  // live: the clip plays in real time
+            app.simulateStatusItemClick()
+            _ = await wait(30, { app.recording["state"] as? String == "idle" })
+            let started = Date()
+            let finished = await wait(900, { TranscriptionRunner.shared.running.isEmpty })
+            let log = (try? String(contentsOf: folder.appending(path: "transcribe.log"), encoding: .utf8)) ?? ""
+            let data = try? Data(contentsOf: folder.appending(path: "transcript.json"))
+            let segments = (data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["segments"] as? [[String: Any]] ?? []
+            let names = Set(segments.compactMap { $0["speaker"] as? String })
+            let system = segments.filter { $0["track"] as? String == "system" }
+            check("speakers \(mode): transcription finished cleanly", finished && !log.contains("Traceback") && !log.contains("WARNING"),
+                  "\(Int(Date().timeIntervalSince(started))) s after stop · " + (log.split(separator: "\n").first { $0.hasPrefix("speakers:") }.map(String.init) ?? "no speakers line"))
+            check("speakers \(mode): Others split into Speaker 1, Speaker 2…",
+                  !names.contains("Others") && names.filter { $0.hasPrefix("Speaker ") }.count >= 2 && system.allSatisfy { ($0["speaker"] as? String ?? "").hasPrefix("Speaker ") },
+                  names.sorted().joined(separator: ", ") + " · \(system.count) system segments")
+            if let data { try? data.write(to: report.deletingLastPathComponent().appending(path: "speakers-\(mode).json")) }
+            try? FileManager.default.removeItem(at: folder)
+        }
+    }
+
+    /// 8. Speakers, the way a user meets them: Settings shows the switch and where models run;
+    ///    on a meeting page, clicking "Speaker 1", typing a name and pressing Enter renames it
+    ///    in the transcript files through the real transcriber.
+    private static func speakersTest(_ check: (String, Bool, String) -> Void) async {
+        WebWindows.shared.showSettings(tab: "transcription")
+        try? await Task.sleep(for: .seconds(2))
+        if let (window, web) = WebWindows.shared.window("settings") {
+            let savedSpeakers = UserDefaults.standard.object(forKey: "identifySpeakers")  // nil = never set; restore exactly
+            let found = (try? await web.callAsyncJavaScript("""
+                const radios = [...document.querySelectorAll('[aria-label="Run local models on"] [role=radio]')].map((r) => r.innerText.split('\\n')[0])
+                const toggle = document.querySelector('[role=switch][aria-label="Tell speakers apart"]')
+                if (!toggle) return 'no speakers switch; processors: ' + radios.join(' | ')
+                const before = toggle.getAttribute('aria-checked')
+                toggle.click()
+                for (let i = 0; i < 20 && toggle.getAttribute('aria-checked') === before; i++) await new Promise((ok) => setTimeout(ok, 100))
+                return radios.join(' | ') + ' · switch ' + before + ' → ' + toggle.getAttribute('aria-checked')
+                """, arguments: [:], in: nil, contentWorld: .page)) as? String ?? "script failed"
+            check("settings: processors listed by name", found.contains("Graphics card (GPU) · \(Preferences.gpuName ?? "-")") && found.contains("Processor (CPU)"), found)
+            check("settings: the speakers switch turns the setting on and off", Preferences.speakers != (savedSpeakers as? Bool ?? false), found)
+            if let savedSpeakers { UserDefaults.standard.set(savedSpeakers, forKey: "identifySpeakers") }
+            else { UserDefaults.standard.removeObject(forKey: "identifySpeakers") }
+            window.close()
+        } else {
+            check("Settings window opened", false, "")
+        }
+
+        let folder = Preferences.meetingsRoot.appending(path: "anymeet-selftest-speakers")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let segments: [[String: Any]] = [("Speaker 1", 0, "hello"), ("Speaker 2", 3, "hi"), ("Speaker 1", 6, "again")].map {
+            ["speaker": $0.0, "start": $0.1, "end": $0.1 + 3, "text": $0.2, "failed": "", "track": "system"]
+        }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? JSONSerialization.data(withJSONObject: ["model": "selftest", "duration": 9.0, "segments": segments])
+            .write(to: folder.appending(path: "transcript.json"))
+        FileManager.default.createFile(atPath: folder.appending(path: "system.wav").path, contents: Data())
+        WebWindows.shared.showMeetings(id: folder.lastPathComponent)
+        try? await Task.sleep(for: .seconds(3))
+        guard let (window, web) = WebWindows.shared.window("meetings") else { return check("rename: Meetings window opened", false, "") }
+        let typed = (try? await web.callAsyncJavaScript("""
+            const chip = document.querySelector('[aria-label="Rename Speaker 1"]')
+            if (!chip) return 'no Speaker 1 to click'
+            chip.click()
+            await new Promise((ok) => setTimeout(ok, 200))
+            const input = document.getElementById('rename')
+            if (!input) return 'no name field opened'
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Rahim Uddin')
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            input.form.requestSubmit()
+            for (let i = 0; i < 50; i++) {
+              const names = [...document.querySelectorAll('.speakers .who')].map((b) => b.innerText.trim())
+              if (names.includes('Rahim Uddin')) return 'page shows ' + names.join(', ')
+              await new Promise((ok) => setTimeout(ok, 200))
+            }
+            return 'page never showed the new name'
+            """, arguments: [:], in: nil, contentWorld: .page)) as? String ?? "script failed"
+        check("rename: the page shows the new name", typed.hasPrefix("page shows") && !typed.contains("Speaker 1"), typed)
+        let saved = (try? JSONSerialization.jsonObject(with: Data(contentsOf: folder.appending(path: "transcript.json")))) as? [String: Any]
+        let names = (saved?["segments"] as? [[String: Any]] ?? []).map { $0["speaker"] as? String ?? "" }
+        let markdown = (try? String(contentsOf: folder.appending(path: "transcript.md"), encoding: .utf8)) ?? ""
+        check("rename: every segment of that speaker renamed in transcript.json", names == ["Rahim Uddin", "Speaker 2", "Rahim Uddin"], names.joined(separator: ", "))
+        check("rename: transcript.md rewritten", markdown.contains("**[00:00:06] Rahim Uddin:** again"), String(markdown.prefix(160)))
+        window.close()
     }
 
     private static func finish(_ checks: [[String: Any]], _ report: URL) -> Never {

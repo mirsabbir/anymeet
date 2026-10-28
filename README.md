@@ -3,7 +3,7 @@
 AnyMeet is a bot-free meeting recorder for macOS and Windows. One click records every display, your microphone and the system audio (Zoom, Teams, Meet …) as separate files. The transcript grows while you talk, or is written when you stop, and handles **Bangla, English and mixed Bangla-English speech**.
 
 - **No meeting bot.** Everything is captured on your own computer; recordings stay in `~/Meetings`.
-- **Speakers from tracks.** Your microphone is labelled "Me", system audio "Others".
+- **Who said what.** Your microphone is "Me". Everyone else, in the system audio, can be told apart by voice as Speaker 1, Speaker 2… on your own computer, and renamed on the meeting page.
 - **Your words, spelled right.** A personal glossary (names, products, jargon) keeps English terms in English letters.
 - **Swappable transcription.** Gemini 3.5 Transcribe by default, or free Whisper models that run on your own computer (one for Bangla, one for English). Providers plug in through a small adapter.
 - **Play it back in the app.** Click a time in the transcript to hear that moment from the speaker's own track; recordings play inside the app with the system's own decoders.
@@ -85,11 +85,34 @@ No local model handles Bangla and English in the same sentence yet; use Gemini f
 
 Both modes work with every model. From the command line: `uv run transcribe <meeting-folder>` (add `--live` to follow a recording in progress).
 
+**Telling speakers apart**
+
+Settings → Transcription → Speakers. Turned on, the system audio ("Others") is split by voice into Speaker 1, Speaker 2… when the meeting ends, and every part of the transcript gets one speaker. It runs on your computer with [pyannote community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) and works with every model above, since it only listens to voices. Click a name on the meeting page to rename it everywhere; giving two speakers the same name merges them.
+
+- **One-time setup:** the model is free but gated. Sign in at Hugging Face, accept its terms, create a token of type "Read" and paste it into Settings. The model (33 MB) then downloads, and after that it works offline. pyannote's usage telemetry is switched off.
+- **Live mode:** the transcript says "Others" during the meeting, because telling voices apart needs the whole recording. After Stop the system audio is split once; a part with one speaker is relabelled, and only parts where several people spoke are transcribed again.
+- **If it can't run** (no model, an error), the transcript is still written, with "Others".
+- **Command line:** `uv run --extra speakers transcribe <meeting-folder> --speakers`, and `uv run transcribe <meeting-folder> --rename-speaker "Speaker 1" "Rahim"`.
+
+**GPU or processor**
+
+Settings → Transcription → Run local models on: the graphics card or the processor. It applies to the local Whisper models and to telling speakers apart. Measured on a MacBook Air M3 (8 cores, 16 GB) with a 10-minute, four-voice English test clip, per hour of meeting:
+
+| Job | On the GPU | On the processor |
+|---|---|---|
+| Telling speakers apart | ~6 min, ~2 min of processor time, 0.8 GB | ~40 min with ~3.5 cores busy, 3.8 GB |
+| Local Whisper (English) | ~21 min, ~3 min of processor time | slower; not measured |
+
+On the GPU your processor stays mostly free for other work. The test clip's 4 voices were all found, with a diarization error rate of 7.9%; real meetings with similar voices or crosstalk will do worse.
+
+- **macOS:** the Apple GPU (through Metal), the default.
+- **Windows:** NVIDIA cards only; the app finds them with `nvidia-smi`. Choosing the GPU installs PyTorch built for CUDA once (2.6 GB, needs a recent NVIDIA driver) and checks that the card works (`transcribe --device`). Other cards, and PCs without one, use the processor, which is also the default.
+
 ## Settings
 
 Nothing personal lives in the code. Each user's settings folder holds:
 
-- `.env`: the API key, e.g. `GEMINI_API_KEY=…`
+- `.env`: the API key, e.g. `GEMINI_API_KEY=…`, and the Hugging Face token for the speaker model, `HF_TOKEN=…`
 - `glossary.txt`: one term per line
 
 | OS | Folder |
@@ -103,11 +126,17 @@ Both can be edited from the app: Settings → Transcription and Settings → Glo
 ## Tests
 
 ```bash
-cd transcriber && uv run pytest                       # transcriber: audio splitting, pipeline, CLI, live mode
+cd transcriber && uv run pytest                       # transcriber: audio splitting, pipeline, CLI, live mode, speakers
 recorder-macos/build.sh && recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-test.json --fake-capture
 ```
 
-The macOS self-test drives the real app: it records (with `--fake-capture`, a spoken test clip instead of the screen), stops from the menu-bar item, runs the transcriber after the meeting and live (the transcript must appear while still recording), checks the menu-bar icon at every step, pastes into the API key field and copies to the clipboard, then writes a pass/fail report. Without `--fake-capture`, start it with `open -a AnyMeet --args --self-test <report.json>` so the real screen capture runs under AnyMeet's own permission. It also plays a track from the transcript inside the app, and stops the way the system's ⏹ in the menu bar does (that button stops only the screen video, so AnyMeet has to notice and stop the rest).
+The macOS self-test drives the real app: it records (with `--fake-capture`, a spoken test clip instead of the screen), stops from the menu-bar item, runs the transcriber after the meeting and live (the transcript must appear while still recording), checks the menu-bar icon at every step, pastes into the API key field and copies to the clipboard, then writes a pass/fail report. Without `--fake-capture`, start it with `open -a AnyMeet --args --self-test <report.json>` so the real screen capture runs under AnyMeet's own permission. It also plays a track from the transcript inside the app, and stops the way the system's ⏹ in the menu bar does (that button stops only the screen video, so AnyMeet has to notice and stop the rest). Last, it checks the GPU/processor choice and the speakers switch in Settings, and renames a speaker on a meeting page by clicking it and typing, which must rewrite the transcript files.
+
+`--speakers-test` records a WAV of several voices as the system audio (`--fake-system`, 16 kHz mono) with "Tell speakers apart" on, transcribes it after the meeting and live, and checks that "Others" comes out as Speaker 1, Speaker 2…. It needs the speaker model downloaded:
+
+```bash
+recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-speakers.json --fake-capture --speakers-test --fake-system voices.wav
+```
 
 `--download-test <model>` checks a local model download through Settings instead: the card says it isn't downloaded, clicking it shows progress up to the end, and the transcriber finds every file. Give it an empty `HF_HOME` so it really downloads and leaves your model cache alone:
 

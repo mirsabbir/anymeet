@@ -52,12 +52,23 @@ def test_download_reports_bytes_from_cached_to_total(monkeypatch):
 
 def test_cli_models_prints_json(monkeypatch, capsys):
     monkeypatch.setattr(models, "downloaded", lambda m: m.language == "bengali")
+    monkeypatch.setattr(models.sys, "platform", "darwin")
     monkeypatch.setattr(sys, "argv", ["transcribe", "--models"])
     cli.main()
     assert json.loads(capsys.readouterr().out) == [
         {"id": "local-whisper-bangla", "downloaded": True},
         {"id": "local-whisper-english", "downloaded": False},
+        {"id": "speakers-pyannote", "downloaded": False},
     ]
+
+
+def test_windows_also_lists_gpu_support(monkeypatch):
+    monkeypatch.setattr(models, "downloaded", lambda m: False)
+    monkeypatch.setattr(models.sys, "platform", "win32")
+    monkeypatch.setattr(models.metadata, "version", lambda name: "2.14.1+cu126")
+    assert models.status()[-1] == {"id": "gpu-support", "downloaded": True}
+    monkeypatch.setattr(models.metadata, "version", lambda name: "2.14.1")
+    assert models.status()[-1] == {"id": "gpu-support", "downloaded": False}
 
 
 def test_cli_rejects_unknown_download(monkeypatch):
@@ -73,3 +84,14 @@ def test_progress_printer_throttles_but_always_prints_the_end(capsys):
     report(100, 100)
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert lines == [{"done": 0, "total": 100}, {"done": 100, "total": 100}]
+
+
+def test_device_setting_cpu_keeps_models_on_the_processor(monkeypatch):
+    pytest.importorskip("torch")
+    from transcriber import device
+
+    monkeypatch.setenv("ANYMEET_DEVICE", "cpu")
+    assert device.check()["device"] == "cpu" and "problem" not in device.check()
+    monkeypatch.setenv("ANYMEET_DEVICE", "gpu")
+    result = device.check()
+    assert result["device"] in ("mps", "cuda") or "problem" in result, "asked for the GPU: use it or say why not"

@@ -1,5 +1,6 @@
-r"""transcribe <audio file or meeting folder> [--glossary FILE] [--transcriber NAME] [--live]
-transcribe --models | --download MODEL
+r"""transcribe <audio file or meeting folder> [--glossary FILE] [--transcriber NAME] [--live] [--speakers]
+transcribe <meeting folder> --rename-speaker OLD NEW
+transcribe --models | --download MODEL | --device
 
 Settings: API keys in <config>/.env, the glossary in <config>/glossary.txt, where
 <config> is ~/Library/Application Support/AnyMeet (macOS),
@@ -7,7 +8,8 @@ Settings: API keys in <config>/.env, the glossary in <config>/glossary.txt, wher
 
 A file is one speaker. In a folder, mic.* is "Me", system.* is "Others" and
 any other audio file is labelled with its own name. Output goes next to the
-input: <file>.transcript.md/.json, or transcript.md/.json inside the folder."""
+input: <file>.transcript.md/.json, or transcript.md/.json inside the folder.
+--speakers splits "Others" into Speaker 1, Speaker 2… (speakers.py)."""
 import argparse
 import json
 import math
@@ -18,10 +20,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from . import base, live, models, pipeline
+from . import base, device, live, models, pipeline, speakers
 
 AUDIO_EXT = {".m4a", ".mp3", ".wav", ".flac", ".ogg", ".opus", ".aac", ".webm", ".mp4", ".mov"}
-SPEAKERS = {"mic": "Me", "system": "Others"}
+SPEAKERS = {"mic": "Me", "system": pipeline.OTHERS}
 PROJECT = Path(__file__).resolve().parent.parent
 
 
@@ -64,6 +66,23 @@ def _progress_printer(every: float = 0.25):
     return report
 
 
+def _diarizer(enabled: bool):
+    """speakers.diarize when it can run; a problem with it never costs the transcript."""
+    if not enabled:
+        return None
+    if not speakers.available():
+        print("WARNING: the speaker model is not downloaded (Settings → Speakers); keeping “Others”", flush=True)
+        return None
+
+    def diarize(wav: Path) -> list[speakers.Turn]:
+        try:
+            return speakers.diarize(wav)
+        except Exception as e:
+            print(f"WARNING: couldn't tell the speakers apart ({type(e).__name__}: {str(e)[:200]}); keeping “Others”", flush=True)
+            return []
+    return diarize
+
+
 def main() -> None:
     load_dotenv(config_dir() / ".env")
     load_dotenv(PROJECT / ".env")  # developer fallback; never overrides the user's settings
@@ -74,17 +93,31 @@ def main() -> None:
     ap.add_argument("--live", action="store_true",
                     help="transcribe <folder>/live/*.wav while they are still being recorded (see live.py)")
     ap.add_argument("--models", action="store_true", help="print which local models are downloaded, as JSON")
-    ap.add_argument("--download", metavar="MODEL", choices=models.LOCAL,
+    ap.add_argument("--download", metavar="MODEL", choices=models.DOWNLOADS,
                     help="download a local model, printing progress as JSON lines")
+    ap.add_argument("--speakers", action="store_true", help='tell apart the people in "Others" (needs --extra speakers)')
+    ap.add_argument("--rename-speaker", nargs=2, metavar=("OLD", "NEW"), help="rename a speaker in a finished transcript")
+    ap.add_argument("--device", action="store_true",
+                    help="print where local models run, as JSON; exits 1 when the GPU was asked for but can't be used")
     args = ap.parse_args()
     if args.models:
         print(json.dumps(models.status()))
         return
     if args.download:
-        models.download(models.LOCAL[args.download], _progress_printer())
+        models.download(models.DOWNLOADS[args.download], _progress_printer())
         return
+    if args.device:
+        result = device.check()
+        print(json.dumps(result))
+        if "problem" in result:
+            sys.exit(f"GPU not usable: {result['problem']}")  # stderr: the apps show its last line
     if args.path is None:
         ap.error("path is required")
+    if args.rename_speaker:
+        _, out = _tracks(args.path.expanduser().resolve())
+        changed = pipeline.rename_speaker(out, args.path.expanduser().resolve().stem, *args.rename_speaker)
+        print(f"{changed} segment(s) renamed in {out}.md")
+        return
 
     transcriber = base.get(args.transcriber)
     glossary = _glossary(args.glossary)
@@ -93,7 +126,7 @@ def main() -> None:
     if args.live:
         folder = args.path.expanduser().resolve()
         print(f"{transcriber.name}: live, {len(glossary)} glossary term(s)", flush=True)
-        failed = live.run(folder, SPEAKERS, transcriber, glossary, workers=workers)
+        failed = live.run(folder, SPEAKERS, transcriber, glossary, workers=workers, diarize=_diarizer(args.speakers))
         print(f"live transcript done in {time.monotonic() - started:.0f}s -> {folder / 'transcript'}.md")
         if failed:
             print(f"WARNING: {failed} segment(s) could not be transcribed; they are marked ⚠️ in the transcript")
@@ -101,7 +134,8 @@ def main() -> None:
         return
     tracks, out = _tracks(args.path.expanduser().resolve())
     print(f"{transcriber.name}: {len(tracks)} track(s), {len(glossary)} glossary term(s)")
-    segments, length = pipeline.transcribe_tracks(tracks, transcriber, glossary, workers=workers)
+    segments, length = pipeline.transcribe_tracks(tracks, transcriber, glossary, workers=workers,
+                                                  diarize=_diarizer(args.speakers))
     failed = pipeline.write(segments, length, transcriber.name, args.path.stem, out)
     print(f"{len(segments)} segment(s) from {length / 60:.1f} min of audio in "
           f"{time.monotonic() - started:.0f}s -> {out}.md")

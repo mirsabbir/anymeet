@@ -24,6 +24,8 @@ winget install Microsoft.DotNet.DesktopRuntime.8 Microsoft.VCRedist.2015+.x64 as
 
 WebView2 ships with Windows 11.
 
+Local models (Whisper, telling speakers apart) run on the processor by default. With an NVIDIA graphics card, Settings → Transcription → Run local models on → Graphics card installs PyTorch built for CUDA once (2.6 GB) and checks the card works; it needs a recent NVIDIA driver. Other graphics cards aren't supported yet.
+
 ## Run
 
 - **From a release:** download [AnyMeet-Windows-x64.zip](https://github.com/mirsabbir/anymeet/releases/latest/download/AnyMeet-Windows-x64.zip), unzip, run `AnyMeet.exe`. The app isn't code-signed yet, so SmartScreen asks: choose "More info → Run anyway".

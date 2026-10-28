@@ -2,11 +2,12 @@
 // Every host implements these methods and events; see bridge.ts for transport.
 
 export interface Segment {
-  speaker: string
+  speaker: string // "Me", "Others", "Speaker 1"… or the name the user gave
   start: number // seconds from the start of the meeting
   end: number
   text: string
   failed: string // non-empty when this part could not be transcribed
+  track?: string // the audio file's name without extension (mic, system); absent in older transcripts
 }
 
 export type TranscriptStatus = 'none' | 'transcribing' | 'done' | 'failed'
@@ -47,10 +48,20 @@ export interface Transcriber {
 
 /** A local model's files on this computer. */
 export interface ModelState {
-  id: string // a Transcriber id, e.g. local-whisper-english
+  // a Transcriber id (e.g. local-whisper-english), 'speakers-pyannote', or on Windows
+  // 'gpu-support' (PyTorch for NVIDIA cards, installed instead of downloaded)
+  id: string
   downloaded: boolean
   progress?: { done: number; total: number } // bytes, while downloading; total is 0 while getting ready
   error?: string // why the last download failed
+}
+
+/** Where local models (Whisper, speaker identification) run. */
+export interface Processor {
+  id: 'gpu' | 'cpu'
+  name: string // e.g. "Apple M3", "NVIDIA GeForce RTX 4060"
+  note: string
+  available: boolean // false when there is no graphics card the models can use
 }
 
 /** live: while recording · after: when recording stops · off: only by hand */
@@ -62,6 +73,10 @@ export interface Settings {
   transcriber: string
   transcribers: Transcriber[]
   apiKeySet: boolean
+  speakers: boolean // split "Others" into Speaker 1, Speaker 2…
+  hfTokenSet: boolean // a Hugging Face token is saved (needed once, to download the speaker model)
+  processor: 'gpu' | 'cpu'
+  processors: Processor[]
   glossary: string[]
   displays: string[]
   microphone: string
@@ -99,6 +114,11 @@ export interface HostApi {
   getModels(p: { refresh?: boolean }): ModelState[] // local models; refresh re-checks the disk (about a second)
   downloadModel(p: { id: string }): void // returns at once; progress arrives with 'modelsChanged'
   setApiKey(p: { key: string }): void
+  setSpeakers(p: { on: boolean }): void
+  setHfToken(p: { token: string }): void
+  setProcessor(p: { id: 'gpu' | 'cpu' }): void
+  renameSpeaker(p: { id: string; from: string; to: string }): void // in that meeting's transcript; same name = merge
+  openLink(p: { url: string }): void // in the default browser; https://huggingface.co only
   setGlossary(p: { terms: string[] }): void
 }
 

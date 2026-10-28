@@ -1,4 +1,5 @@
 import Foundation
+import Metal
 
 /// App settings. Plain preferences live in UserDefaults; the glossary and the API
 /// key live in ~/Library/Application Support/AnyMeet (glossary.txt, .env),
@@ -22,6 +23,7 @@ enum Preferences {
         ["id": "soniox", "name": "Soniox", "note": "Not added yet", "available": false, "needsKey": true],
     ]
     static let keyName = "GEMINI_API_KEY"  // the only available transcriber's key
+    static let hfTokenName = "HF_TOKEN"  // Hugging Face, read by the transcriber to download the speaker model
 
     /// When to transcribe: "live" (while recording), "after" (when recording stops) or "off".
     static var transcribeMode: String {
@@ -35,6 +37,35 @@ enum Preferences {
     static var transcriber: String {
         get { UserDefaults.standard.string(forKey: "transcriber") ?? "gemini-3.5-transcribe" }
         set { UserDefaults.standard.set(newValue, forKey: "transcriber") }
+    }
+
+    /// Split "Others" into Speaker 1, Speaker 2… (`transcribe --speakers`).
+    static var speakers: Bool {
+        get { UserDefaults.standard.bool(forKey: "identifySpeakers") }
+        set { UserDefaults.standard.set(newValue, forKey: "identifySpeakers") }
+    }
+
+    /// Where local models run, "gpu" or "cpu"; the transcriber reads it as ANYMEET_DEVICE.
+    static var processor: String {
+        get { UserDefaults.standard.string(forKey: "processor") ?? (gpuName == nil ? "cpu" : "gpu") }
+        set { UserDefaults.standard.set(newValue, forKey: "processor") }
+    }
+
+    static let gpuName: String? = MTLCreateSystemDefaultDevice()?.name  // e.g. "Apple M3"
+
+    /// The Processor list in ui/src/types.ts.
+    static var processors: [[String: Any]] {
+        var size = 0
+        sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0)
+        var brand = [CChar](repeating: 0, count: max(size, 1))
+        sysctlbyname("machdep.cpu.brand_string", &brand, &size, nil, 0)
+        let cpu = String(cString: brand).trimmingCharacters(in: .whitespaces)
+        return [
+            ["id": "gpu", "name": gpuName ?? "None found", "available": gpuName != nil,
+             "note": gpuName == nil ? "No graphics card the models can use" : "Faster, and leaves the processor free for your other work"],
+            ["id": "cpu", "name": "\(cpu.isEmpty ? "This Mac" : cpu) · \(ProcessInfo.processInfo.activeProcessorCount) cores", "available": true,
+             "note": "Slower, and keeps several processor cores busy"],
+        ]
     }
 
     static let configFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -57,16 +88,22 @@ enum Preferences {
         }
     }
 
-    /// True when .env has a non-empty value for the key. The value itself is never returned to the UI.
-    static var apiKeySet: Bool {
-        envLines().contains { $0.hasPrefix("\(keyName)=") && $0.count > keyName.count + 1 }
+    static var apiKeySet: Bool { isSet(keyName) }
+    static var hfTokenSet: Bool { isSet(hfTokenName) }
+
+    /// True when .env has a non-empty value for the name. The value itself is never returned to the UI.
+    private static func isSet(_ name: String) -> Bool {
+        envLines().contains { $0.hasPrefix("\(name)=") && $0.count > name.count + 1 }
     }
 
-    static func setApiKey(_ key: String) throws {
+    static func setApiKey(_ key: String) throws { try setSecret(key, as: keyName) }
+    static func setHfToken(_ token: String) throws { try setSecret(token, as: hfTokenName) }
+
+    private static func setSecret(_ value: String, as name: String) throws {
         guard let url = configFile(".env") else { return }
-        let clean = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        var lines = envLines().filter { !$0.hasPrefix("\(keyName)=") }
-        lines.append("\(keyName)=\(clean)")
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        var lines = envLines().filter { !$0.hasPrefix("\(name)=") }
+        lines.append("\(name)=\(clean)")
         try (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }

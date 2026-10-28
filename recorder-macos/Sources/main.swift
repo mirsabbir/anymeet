@@ -56,10 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         render()
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--show"), i + 1 < args.count {
-            let parts = args[i + 1].split(separator: "/", maxSplits: 1).map(String.init)  // meetings/<id>
-            let view = parts[0]
+            let parts = args[i + 1].split(separator: "/", maxSplits: 1).map(String.init)  // meetings/<id>, settings/<tab>
+            let view = parts[0], detail = parts.count > 1 ? parts[1] : nil
             Task { @MainActor in
-                view == "settings" ? WebWindows.shared.showSettings() : WebWindows.shared.showMeetings(id: parts.count > 1 ? parts[1] : nil)
+                view == "settings" ? WebWindows.shared.showSettings(tab: detail) : WebWindows.shared.showMeetings(id: detail)
                 // `--snapshot <png>`: testing aid, saves the window once it has rendered.
                 if let j = args.firstIndex(of: "--snapshot"), j + 1 < args.count {
                     try? await Task.sleep(for: .seconds(3))

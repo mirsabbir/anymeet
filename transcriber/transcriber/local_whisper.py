@@ -1,4 +1,4 @@
-"""Whisper running on this computer (Apple GPU through MPS, else CPU). No API key,
+"""Whisper running on this computer (on the GPU when there is one, see device.py). No API key,
 no internet after the first model download (1.5-1.6 GB, cached by Hugging Face;
 `transcribe --download <model>` fetches it ahead with progress).
 
@@ -6,6 +6,7 @@ Needs the optional dependencies: `uv sync --extra local` (the desktop apps pass
 `--extra local` when a local model is selected)."""
 from pathlib import Path
 
+from . import device
 from .models import LocalModel
 
 
@@ -20,9 +21,10 @@ class LocalWhisperTranscriber:
             raise SystemExit("Local model not installed: run `uv sync --extra local` in the transcriber folder")
         self.name = name
         self.language = model.language
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
-        self.pipe = pipeline("automatic-speech-recognition", model=model.repo, device=device,
-                             dtype=torch.float16 if device == "mps" else torch.float32)
+        where = device.torch_device()
+        print(f"{name}: running on {where}", flush=True)
+        self.pipe = pipeline("automatic-speech-recognition", model=model.repo, device=where,
+                             dtype=torch.float32 if where == "cpu" else torch.float16)
         if model.base:
             self.pipe.model.generation_config = GenerationConfig.from_pretrained(model.base)
 

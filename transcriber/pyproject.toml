@@ -17,9 +17,35 @@ local = [
     "transformers>=4.45",
     "accelerate>=1.0",
 ]
+# Speaker identification (pyannote community-1); large, so only installed when turned on.
+speakers = [
+    "torch>=2.5",
+    "pyannote.audio>=4.0",
+]
+# Windows with an NVIDIA graphics card: PyTorch built for CUDA instead of PyPI's CPU-only
+# build (about 2.6 GB). Passed together with `local` or `speakers` when the GPU is chosen.
+cuda = [
+    "torch>=2.5",
+]
+# Never passed by the apps; it only gives `conflicts` below its other side.
+cpu = [
+    "torch>=2.5",
+]
 
 [project.scripts]
 transcribe = "transcriber.cli:main"
+
+[tool.uv]
+# Keeps two PyTorch builds for Windows in the lock: PyPI's unless `--extra cuda` is passed.
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cuda", extra = "cuda", marker = "sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]
