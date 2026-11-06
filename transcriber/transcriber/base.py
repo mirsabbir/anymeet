@@ -16,10 +16,21 @@ class Transcriber(Protocol):
         ...
 
 
+class QuotaExhausted(RuntimeError):
+    """The provider's daily (or longer) limit is used up, so every further request would
+    fail too. The message says so in words a user can act on; the run stops sending."""
+
+
 def _gemini_35() -> Transcriber:
     from .gemini import GeminiTranscriber
 
     return GeminiTranscriber("gemini-3.5-transcribe")
+
+
+def _gemini_flash() -> Transcriber:
+    from .gemini import GeminiFlashTranscriber
+
+    return GeminiFlashTranscriber("gemini-3.8-flash")
 
 
 def _local(name: str) -> Callable[[], Transcriber]:
@@ -33,6 +44,7 @@ def _local(name: str) -> Callable[[], Transcriber]:
 # Imports stay inside the factories so only the chosen provider's SDK loads.
 TRANSCRIBERS: dict[str, Callable[[], Transcriber]] = {
     "gemini-3.5-transcribe": _gemini_35,
+    "gemini-3.8-flash": _gemini_flash,
     **{name: _local(name) for name in models.LOCAL},
 }
 DEFAULT = "gemini-3.5-transcribe"

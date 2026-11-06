@@ -121,7 +121,11 @@ sealed class WebWindow : Form
                 return await MeetingStore.Get(Str("id"));
             case "transcribe":
                 var folder = MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found");
-                if (!TranscriptionRunner.Start(folder)) throw new InvalidOperationException("transcription is already running, or uv is not installed");
+                if (!TranscriptionRunner.Start(folder, onlyFailed: p["onlyFailed"]?.GetValue<bool>() ?? false))
+                    throw new InvalidOperationException("transcription is already running, or uv is not installed");
+                return null;
+            case "stopTranscribing":
+                TranscriptionRunner.Stop(MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found"));
                 return null;
             case "openPath":
                 Open(Str("path"));

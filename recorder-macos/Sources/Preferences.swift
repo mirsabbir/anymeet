@@ -17,12 +17,13 @@ enum Preferences {
     }()
 
     static let transcribers: [[String: Any]] = [
-        ["id": "gemini-3.5-transcribe", "name": "Gemini 3.5 Transcribe", "note": "Tested on our Bangla audio · ~$0.35/hour", "available": true, "needsKey": true],
+        ["id": "gemini-3.5-transcribe", "name": "Gemini 3.5 Transcribe", "note": "Tested on our Bangla audio · ~$0.35/hour · a new API key allows only 100 parts a day, less than one meeting", "available": true, "needsKey": true],
+        ["id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "note": "Same Gemini key · far higher daily limit · matched Transcribe in a spot check, not benchmarked yet", "available": true, "needsKey": true],
         ["id": "local-whisper-bangla", "name": "Local Whisper (Bangla)", "note": "On this Mac, free, offline · Bangla only: English words come out in Bangla letters · 1.5 GB", "available": true, "needsKey": false],
         ["id": "local-whisper-english", "name": "Local Whisper (English)", "note": "On this Mac, free, offline · English-only meetings · 1.6 GB", "available": true, "needsKey": false],
         ["id": "soniox", "name": "Soniox", "note": "Not added yet", "available": false, "needsKey": true],
     ]
-    static let keyName = "GEMINI_API_KEY"  // the only available transcriber's key
+    static let keyName = "GEMINI_API_KEY"  // both Gemini models' key
     static let hfTokenName = "HF_TOKEN"  // Hugging Face, read by the transcriber to download the speaker model
 
     /// When to transcribe: "live" (while recording), "after" (when recording stops) or "off".

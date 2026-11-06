@@ -4,7 +4,7 @@ import { clock, dateTime, dayLabel, duration, time } from './format'
 import { Icon } from './icons'
 import { RecordBar } from './RecordBar'
 import { UpdateBanner } from './Update'
-import type { Meeting, MeetingFile, MeetingSummary, Segment, TranscriptStatus } from './types'
+import type { Meeting, MeetingFile, MeetingSummary, Segment, TranscribeProgress, TranscriptStatus } from './types'
 
 /** What the in-app player shows; n changes on every request, so the same time can be played twice. */
 type Playing = { file: MeetingFile; at: number; n: number }
@@ -116,6 +116,9 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
     const timer = setInterval(load, 3000)
     return () => clearInterval(timer)
   }, [growing, load])
+  const [actionError, setActionError] = useState('')
+  const [stopping, setStopping] = useState(false)
+  useEffect(() => { if (!growing) setStopping(false) }, [growing])
   if (!meeting) return null
 
   const failed = meeting.segments.filter((s) => s.failed).length
@@ -127,7 +130,15 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
     const file = audio.find((f) => f.name.split('.')[0] === (s.track ?? TRACK_OF[s.speaker] ?? s.speaker)) ?? audio[0]
     if (file) play(file, s.start)
   }
-  const transcribe = () => call('transcribe', { id }).then(load)
+  // onlyFailed: Try again sends only the parts that were not transcribed; the rest stays as it is.
+  const transcribe = (onlyFailed = false) => {
+    setActionError('')
+    call('transcribe', { id, onlyFailed }).then(load, (e: Error) => setActionError(e.message))
+  }
+  const stop = () => {
+    setStopping(true)
+    call('stopTranscribing', { id }).then(load, (e: Error) => { setStopping(false); setActionError(e.message) })
+  }
   const copy = async () => {
     await navigator.clipboard.writeText(meeting.transcriptText)
     setCopied(true)
@@ -150,7 +161,9 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
             <button className="btn" onClick={() => call('openPath', { path: meeting.folder })}><Icon name="folder" />Show in Finder</button>
             {meeting.status === 'done' || meeting.status === 'failed' ? (
               <>
-                <button className="btn" onClick={transcribe}><Icon name="refresh" />Transcribe again</button>
+                <button className="btn" onClick={() => transcribe()} title="Transcribe the whole meeting from the start">
+                  <Icon name="refresh" />Transcribe again
+                </button>
                 <button className="btn primary" onClick={copy}><Icon name={copied ? 'check' : 'copy'} />{copied ? 'Copied' : 'Copy transcript'}</button>
               </>
             ) : null}
@@ -166,9 +179,11 @@ function MeetingDetail({ id, query, onDeleted }: { id: string; query: string; on
             {deleteError && <span className="small" style={{ flexBasis: '100%', color: 'var(--warn)' }}>{deleteError}</span>}
           </div>
         </header>
+        <RunBanner meeting={meeting} failed={failed} stopping={stopping} onStop={stop} onRetry={() => transcribe(true)} />
+        {actionError && <p className="banner warn" role="alert">{actionError}</p>}
         <SpeakerNames meeting={meeting} onRenamed={load} />
         {playing && <Player key={playing.file.name} {...playing} onClose={() => setPlaying(undefined)} />}
-        <Transcript meeting={meeting} query={query} onTranscribe={transcribe} onPlay={playSegment} />
+        <Transcript meeting={meeting} query={query} onTranscribe={() => transcribe()} onRetry={() => transcribe(true)} onPlay={playSegment} />
       </div>
       <aside className="files" aria-label="Recorded files">
         {meeting.files.some((f) => f.kind === 'display') && <div className="eyebrow" style={{ padding: 0 }}>Displays</div>}
@@ -259,7 +274,60 @@ function SpeakerNames({ meeting, onRenamed }: { meeting: Meeting; onRenamed: () 
   )
 }
 
-function Transcript({ meeting, query, onTranscribe, onPlay }: { meeting: Meeting; query: string; onTranscribe: () => void; onPlay: (s: Segment) => void }) {
+const STAGE: Record<TranscribeProgress['stage'], string> = {
+  preparing: 'Getting the audio ready…',
+  speakers: 'Telling the speakers apart… This runs on your computer and takes a few minutes for a long meeting.',
+  transcribing: 'Transcribing…',
+}
+
+/**
+ * At the top of the meeting, so it is seen without scrolling: what a running transcription
+ * is doing, how far it is, and Stop. When it has finished with parts missing: how many,
+ * the transcriber's own reason, and Try again for only those parts.
+ */
+function RunBanner({ meeting, failed, stopping, onStop, onRetry }: {
+  meeting: Meeting; failed: number; stopping: boolean; onStop: () => void; onRetry: () => void
+}) {
+  if (meeting.status === 'transcribing') {
+    const p = meeting.progress
+    const counting = p?.stage === 'transcribing' && p.total > 0
+    let text = p ? STAGE[p.stage] : 'Starting…'
+    if (counting) {
+      text = `Transcribing part ${Math.min(p.done + 1, p.total)} of ${p.total}`
+      if (p.failed) text += ` · ${p.failed} could not be transcribed so far`
+    }
+    return (
+      <div className="banner run" role="status" aria-live="polite">
+        <span className="spinner small-spinner" />
+        <span style={{ flex: 1 }}>
+          {stopping ? 'Stopping… the parts already sent are finishing.' : text}
+          {!stopping && p && p.waitSec > 0 && <span className="small"> · Gemini asked to wait: going on in {p.waitSec} s</span>}
+        </span>
+        <button className="btn" onClick={onStop} disabled={stopping}><Icon name="close" />{stopping ? 'Stopping…' : 'Stop'}</button>
+        {counting && (
+          <div className="bar" role="progressbar" aria-label="Parts transcribed" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done}>
+            <span style={{ width: `${(100 * p.done) / p.total}%` }} />
+          </div>
+        )}
+      </div>
+    )
+  }
+  if (failed === 0 || meeting.segments.length === 0) return null
+  return (
+    <div className="banner warn" role="status">
+      <Icon name="warning" />
+      <span style={{ flex: 1 }}>
+        <strong>{failed} part{failed > 1 ? 's were' : ' was'} not transcribed.</strong> The audio is saved.
+        {meeting.error && <><br /><span className="small">{meeting.error}</span></>}
+      </span>
+      <button className="btn primary" onClick={onRetry}>{failed > 1 ? `Try again: only these ${failed} parts` : 'Try again: only this part'}</button>
+    </div>
+  )
+}
+
+function Transcript({ meeting, query, onTranscribe, onRetry, onPlay }: {
+  meeting: Meeting; query: string; onTranscribe: () => void; onRetry: () => void; onPlay: (s: Segment) => void
+}) {
   if (meeting.status === 'transcribing' && meeting.segments.length === 0) {
     return <div className="empty"><div className="spinner" /><h2>Transcribing…</h2><p>Text shows up here as each part is done.</p></div>
   }
@@ -276,13 +344,17 @@ function Transcript({ meeting, query, onTranscribe, onPlay }: { meeting: Meeting
   const tones = speakerTones(meeting.segments)
   return (
     <section className="transcript" aria-label="Transcript">
-      {meeting.segments.map((s, i) => <SegmentRow key={i} s={s} tone={tones.get(s.speaker) ?? ''} query={query} onRetry={onTranscribe} onPlay={onPlay} />)}
+      {meeting.segments.map((s, i) => (
+        <SegmentRow key={i} s={s} tone={tones.get(s.speaker) ?? ''} query={query} busy={meeting.status === 'transcribing'} onRetry={onRetry} onPlay={onPlay} />
+      ))}
       {meeting.status === 'transcribing' && <p className="live-note small muted"><span className="spinner small-spinner" />Transcribing… new text appears as each part is done</p>}
     </section>
   )
 }
 
-function SegmentRow({ s, tone, query, onRetry, onPlay }: { s: Segment; tone: string; query: string; onRetry: () => void; onPlay: (s: Segment) => void }) {
+function SegmentRow({ s, tone, query, busy, onRetry, onPlay }: {
+  s: Segment; tone: string; query: string; busy: boolean; onRetry: () => void; onPlay: (s: Segment) => void
+}) {
   return (
     <div className="segment">
       <button className="at" onClick={() => onPlay(s)} title="Play from here" aria-label={`Play from ${clock(s.start)}`}><Icon name="play" />{clock(s.start)}</button>
@@ -290,7 +362,9 @@ function SegmentRow({ s, tone, query, onRetry, onPlay }: { s: Segment; tone: str
         <div className="failed">
           <Icon name="warning" label="Warning" />
           <span style={{ flex: 1 }}>{s.speaker}: this part could not be transcribed ({clock(s.start)}–{clock(s.end)}). The audio is saved.</span>
-          <button className="btn" onClick={onRetry}>Try again</button>
+          {busy
+            ? <span className="small muted">Waiting for the transcription above</span>
+            : <button className="btn" onClick={onRetry} title="Sends again every part that was not transcribed, and nothing else">Try again</button>}
         </div>
       ) : (
         <div style={{ flex: 1 }}>

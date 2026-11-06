@@ -69,7 +69,8 @@ Settings → Transcription picks the model and when it runs.
 
 | Model | Where it runs | Notes |
 |---|---|---|
-| Gemini 3.5 Transcribe | Google's API | Needs a Gemini API key (prepaid credits); about $0.35 per hour of audio |
+| Gemini 3.5 Transcribe | Google's API | Needs a Gemini API key (prepaid credits); about $0.35 per hour of audio. **A Tier 1 key allows only 100 requests a day on this model**, and a meeting is cut into hundreds of parts, so until the key's tier goes up use Gemini 3.8 Flash |
+| Gemini 3.8 Flash | Google's API | The same Gemini key, with a far higher daily limit. A general model told to transcribe; it matched Transcribe in a spot check on a mixed Bangla/English meeting but isn't in [benchmark/](benchmark/README.md) yet |
 | Local Whisper (Bangla) | Your computer, offline | Free, 1.5 GB. Bangla only: English words come out in Bangla letters. On an M3, 1 minute of audio takes about 1 minute |
 | Local Whisper (English) | Your computer, offline | Free, 1.6 GB (Whisper large-v3-turbo). English-only meetings; Bangla speech comes out translated or garbled |
 
@@ -84,6 +85,14 @@ No local model handles Bangla and English in the same sentence yet; use Gemini f
 - **Off**: transcribe later from the meeting page.
 
 Both modes work with every model. From the command line: `uv run transcribe <meeting-folder>` (add `--live` to follow a recording in progress).
+
+**While it runs, and when parts are missing**
+
+- The top of the meeting page shows what the transcription is doing ("Telling the speakers apart…", "Transcribing part 268 of 723"), a progress bar, and **Stop**. Stop sends nothing more; the parts already sent finish, and the run ends within seconds (at most 30 s).
+- Parts that could not be transcribed are marked ⚠️, and a banner says how many and why, in the transcriber's own words: for a used-up daily limit, which model, how many requests a day, and when it resets.
+- **Try again** sends only those parts and leaves the rest of the transcript as it is; speakers keep their names. From the command line: `uv run transcribe <meeting-folder> --only-failed`.
+- **Transcribe again** starts over. If that run ends with more parts missing than the transcript it would replace (a limit hit, or Stop), the earlier transcript is kept.
+- A daily limit stops the run at once instead of retrying every part; a per-minute limit is waited out by all parts together.
 
 **Telling speakers apart**
 

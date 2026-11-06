@@ -61,9 +61,11 @@ final class TranscriptionRunner {
     }
 
     /// Returns false when the transcriber can't run or this folder is already running.
-    @discardableResult
     /// `live`: start while recording; the transcriber follows live/*.wav until live/done appears.
-    func start(_ folder: URL, live: Bool = false, completion: ((Bool) -> Void)? = nil) -> Bool {
+    /// `onlyFailed`: send again only the parts the transcript marks as not transcribed
+    /// (Try again); speakers keep the names they have, so nothing is diarized.
+    @discardableResult
+    func start(_ folder: URL, live: Bool = false, onlyFailed: Bool = false, completion: ((Bool) -> Void)? = nil) -> Bool {
         let log = folder.appending(path: "transcribe.log")
         func fail(_ reason: String) -> Bool {
             lastError = reason
@@ -72,9 +74,10 @@ final class TranscriptionRunner {
             return false
         }
         guard !running.contains(folder.path) else { lastError = "already transcribing"; return false }
-        let speakers = Preferences.speakers
+        let speakers = Preferences.speakers && !onlyFailed
         let args = Self.extras(local: Preferences.transcriber.hasPrefix("local-"), speakers: speakers)
             + ["transcribe", folder.path] + (live ? ["--live"] : []) + (speakers ? ["--speakers"] : [])
+            + (onlyFailed ? ["--only-failed"] : [])
         let process: Process
         do { process = try Self.uvProcess(args) } catch { return fail(error.localizedDescription) }
         guard Self.find("ffmpeg") != nil else { return fail("ffmpeg not found: install it with `brew install ffmpeg`") }
@@ -87,6 +90,7 @@ final class TranscriptionRunner {
         process.terminationHandler = { [weak self] p in
             DispatchQueue.main.async {
                 self?.running.remove(folder.path)
+                self?.processes[folder.path] = nil
                 NotificationCenter.default.post(name: Self.meetingsChanged, object: nil)
                 completion?(p.terminationStatus == 0)
             }
@@ -94,7 +98,23 @@ final class TranscriptionRunner {
         do { try process.run() } catch { return fail("couldn't start uv: \(error.localizedDescription)") }
         lastError = ""
         running.insert(folder.path)
+        processes[folder.path] = process
         NotificationCenter.default.post(name: Self.meetingsChanged, object: nil)
         return true
+    }
+
+    private var processes: [String: Process] = [:]
+
+    /// Stop button: asks the run to stop (it sends nothing more and finishes the parts already
+    /// sent, see the transcriber's cli.watch_stop), and ends it outright if it hasn't stopped
+    /// after `grace` seconds, e.g. while it is still telling speakers apart.
+    func stop(_ folder: URL, grace: TimeInterval = 30) {
+        // This run's own process, not whatever runs for the folder later: Try again pressed
+        // within the grace period starts a new run that must not be ended by this timer.
+        guard let process = processes[folder.path] else { return }
+        FileManager.default.createFile(atPath: folder.appending(path: "transcribe.stop").path, contents: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + grace) {
+            if process.isRunning { process.terminate() }
+        }
     }
 }

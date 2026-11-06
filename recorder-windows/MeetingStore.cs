@@ -48,6 +48,13 @@ static class MeetingStore
         var log = Path.Combine(folder, "transcribe.log");
         if ((string?)meeting["status"] == "failed" && File.Exists(log))
             meeting["error"] = File.ReadLines(log).LastOrDefault(l => l.Trim().Length > 0) ?? "";  // the transcriber's own last words
+        // What a running transcription is doing and how far it is (the transcriber's progress.py).
+        var progress = Path.Combine(folder, "progress.json");
+        if ((string?)meeting["status"] == "transcribing" && File.Exists(progress))
+        {
+            try { meeting["progress"] = JsonDocument.Parse(File.ReadAllText(progress)).RootElement.Clone(); }
+            catch (Exception e) when (e is IOException or JsonException) { }  // being replaced right now: next poll
+        }
         return meeting;
     }
 

@@ -29,13 +29,24 @@ export interface MeetingFile {
   thumbnail?: string // data: URL of a video frame
 }
 
+/** What a running transcription is doing: the transcriber's <meeting>/progress.json. */
+export interface TranscribeProgress {
+  stage: 'preparing' | 'speakers' | 'transcribing'
+  done: number // parts back from the provider, transcribed or not
+  total: number // parts to send; 0 while preparing, and it grows with the recording in live mode
+  failed: number // of `done`, the parts that could not be transcribed
+  waitSec: number // > 0 while every request waits out the provider's per-minute limit
+  updatedAt: string
+}
+
 export interface Meeting extends MeetingSummary {
   folder: string
   model?: string
   segments: Segment[]
   files: MeetingFile[]
   transcriptText: string // plain text for copying
-  error?: string // last line of transcribe.log when transcription failed
+  error?: string // last line of transcribe.log when transcription failed: the transcriber says why there
+  progress?: TranscribeProgress // while status is 'transcribing', once the transcriber has started
 }
 
 export interface Transcriber {
@@ -105,7 +116,8 @@ export interface HostApi {
   stopRecording(): void // resolves once the files are closed
   listMeetings(): MeetingSummary[]
   getMeeting(p: { id: string }): Meeting
-  transcribe(p: { id: string }): void
+  transcribe(p: { id: string; onlyFailed?: boolean }): void // onlyFailed: send again only the parts marked not transcribed
+  stopTranscribing(p: { id: string }): void // nothing more is sent; parts already sent finish, so it ends within seconds
   deleteMeeting(p: { id: string }): void // moves the folder to the Trash / Recycle Bin
   openPath(p: { path: string }): void
   getSettings(): Settings

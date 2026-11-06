@@ -66,15 +66,20 @@ static class TranscriptionRunner
         return await output;
     }
 
-    /// <summary>Returns false when the transcriber is not set up or this folder is already running.</summary>
-    /// <summary>`live`: start while recording; the transcriber follows live/*.wav until live/done appears.</summary>
-    public static bool Start(string folder, bool live = false, Action<bool>? completion = null)
+    /// <summary>
+    /// Returns false when the transcriber is not set up or this folder is already running.
+    /// `live`: start while recording; the transcriber follows live/*.wav until live/done appears.
+    /// `onlyFailed`: send again only the parts the transcript marks as not transcribed
+    /// (Try again); speakers keep the names they have, so nothing is diarized.
+    /// </summary>
+    public static bool Start(string folder, bool live = false, bool onlyFailed = false, Action<bool>? completion = null)
     {
         ui ??= SynchronizationContext.Current;
         if (Preferences.TranscriberProject == null || running.Contains(folder)) return false;
-        var speakers = Preferences.Speakers;
+        var speakers = Preferences.Speakers && !onlyFailed;
         var info = UvStartInfo([.. Extras(Preferences.Transcriber.StartsWith("local-"), speakers), "transcribe", folder,
-                                .. live ? new[] { "--live" } : [], .. speakers ? new[] { "--speakers" } : []]);
+                                .. live ? new[] { "--live" } : [], .. speakers ? new[] { "--speakers" } : [],
+                                .. onlyFailed ? new[] { "--only-failed" } : []]);
         info.Environment["TRANSCRIBER"] = Preferences.Transcriber;
 
         var log = new StreamWriter(Path.Combine(folder, "transcribe.log")) { AutoFlush = true };
@@ -92,6 +97,7 @@ static class TranscriptionRunner
         process.BeginErrorReadLine();
 
         running.Add(folder);
+        processes[folder] = process;
         RaiseMeetingsChanged();
         _ = Task.Run(async () =>
         {
@@ -101,10 +107,30 @@ static class TranscriptionRunner
             ui?.Post(_ =>
             {
                 running.Remove(folder);
+                processes.Remove(folder);
                 RaiseMeetingsChanged();
                 completion?.Invoke(ok);
             }, null);
         });
         return true;
+    }
+
+    static readonly Dictionary<string, Process> processes = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Stop button: asks the run to stop (it sends nothing more and finishes the parts already
+    /// sent, see the transcriber's cli.watch_stop), and ends it outright if it hasn't stopped
+    /// after the grace period, e.g. while it is still telling speakers apart.
+    /// </summary>
+    public static void Stop(string folder, int graceSeconds = 30)
+    {
+        if (!processes.TryGetValue(folder, out var process)) return;
+        File.WriteAllText(Path.Combine(folder, "transcribe.stop"), "");
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(graceSeconds));
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }  // it ended on its own meanwhile
+        });
     }
 }

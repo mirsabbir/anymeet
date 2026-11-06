@@ -117,7 +117,12 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             return await MeetingStore.get(p["id"] as? String ?? "")
         case "transcribe":
             guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
-            if !TranscriptionRunner.shared.start(folder) { throw BridgeError(TranscriptionRunner.shared.lastError) }
+            if !TranscriptionRunner.shared.start(folder, onlyFailed: p["onlyFailed"] as? Bool ?? false) {
+                throw BridgeError(TranscriptionRunner.shared.lastError)
+            }
+        case "stopTranscribing":
+            guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
+            TranscriptionRunner.shared.stop(folder)
         case "openPath":
             try open(p["path"] as? String ?? "")
         case "getSettings":
