@@ -34,14 +34,15 @@ static class Preferences
         }
         return null;
     }
-    const string KeyName = "GEMINI_API_KEY";  // the only available transcriber's key
+    const string KeyName = "GEMINI_API_KEY";  // both Gemini models' key
     const string HfTokenName = "HF_TOKEN";  // Hugging Face, read by the transcriber to download the speaker model
 
-    public static readonly string[] AvailableTranscribers = { "gemini-3.5-transcribe", "local-whisper-bangla", "local-whisper-english" };
+    public static readonly string[] AvailableTranscribers = { "gemini-3.5-transcribe", "gemini-3.8-flash", "local-whisper-bangla", "local-whisper-english" };
 
     public static readonly object[] Transcribers =
     {
-        new { id = "gemini-3.5-transcribe", name = "Gemini 3.5 Transcribe", note = "Tested on our Bangla audio · ~$0.35/hour", available = true, needsKey = true },
+        new { id = "gemini-3.5-transcribe", name = "Gemini 3.5 Transcribe", note = "Tested on our Bangla audio · ~$0.35/hour · a new API key allows only 100 parts a day, less than one meeting", available = true, needsKey = true },
+        new { id = "gemini-3.8-flash", name = "Gemini 3.8 Flash", note = "Same Gemini key · far higher daily limit · matched Transcribe in a spot check, not benchmarked yet", available = true, needsKey = true },
         new { id = "local-whisper-bangla", name = "Local Whisper (Bangla)", note = "On this PC, free, offline · Bangla only: English words come out in Bangla letters · 1.5 GB", available = true, needsKey = false },
         new { id = "local-whisper-english", name = "Local Whisper (English)", note = "On this PC, free, offline · English-only meetings · 1.6 GB", available = true, needsKey = false },
         new { id = "soniox", name = "Soniox", note = "Not added yet", available = false, needsKey = true },

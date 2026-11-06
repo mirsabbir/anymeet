@@ -39,6 +39,12 @@ enum MeetingStore {
         if meeting["status"] as? String == "failed", let log = try? String(contentsOf: folder.appending(path: "transcribe.log"), encoding: .utf8) {
             meeting["error"] = log.split(separator: "\n").last.map(String.init) ?? ""  // the transcriber's own last words
         }
+        // What a running transcription is doing and how far it is (the transcriber's progress.py).
+        if meeting["status"] as? String == "transcribing",
+           let data = try? Data(contentsOf: folder.appending(path: "progress.json")),
+           let progress = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            meeting["progress"] = progress
+        }
         return meeting
     }
 

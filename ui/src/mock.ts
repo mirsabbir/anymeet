@@ -26,14 +26,60 @@ const fresh: Meeting = {
   ...road, id: '2026-10-21_1500', folder: '~/Meetings/2026-10-21_1500', startedAt: '2026-10-21T15:00:00',
   durationSec: 8, status: 'none', preview: '', segments: [], model: undefined,
 }
-const meetings = [fresh, road]
+// A long meeting where Gemini's daily limit ran out part-way: most parts are missing.
+const QUOTA = "Gemini's daily limit for gemini-3.5-transcribe is used up (100 requests a day on this API key); it resets in 14 h 59 min. Try again then, or choose another model in Settings → Transcription."
+const cut: Meeting = {
+  ...road, id: '2026-11-05_2233', folder: '~/Meetings/2026-11-05_2233', startedAt: '2026-11-05T22:33:00',
+  durationSec: 6324, status: 'failed', error: QUOTA, preview: 'You can see my screen, right?',
+  segments: [
+    { speaker: 'Others', track: 'system', start: 0, end: 3, failed: '', text: 'You can see my screen, right?' },
+    { speaker: 'Me', track: 'mic', start: 4, end: 6, failed: '', text: 'I can see your screen. Perfect.' },
+    ...Array.from({ length: 9 }, (_, i) => ({
+      speaker: i % 2 ? 'Me' : 'Others', track: i % 2 ? 'mic' : 'system', start: 10 + i * 12, end: 20 + i * 12,
+      failed: "Gemini's daily limit for gemini-3.5-transcribe is used up", text: '',
+    })),
+  ],
+}
+const meetings = [cut, fresh, road]
+
+const emit = (e: string) => (window as unknown as { __hostEvent: (e: string) => void }).__hostEvent(e)
+
+// A pretend run: only the failed parts when onlyFailed, one part every 700 ms, Stop ends it.
+let run: ReturnType<typeof setInterval> | undefined
+function mockTranscribe(m: Meeting, onlyFailed: boolean) {
+  if (m.status === 'transcribing') throw new Error('already transcribing')
+  const todo = m.segments.filter((s) => s.failed || !onlyFailed)
+  m.status = 'transcribing'
+  m.error = undefined
+  m.progress = { stage: 'preparing', done: 0, total: 0, failed: 0, waitSec: 0, updatedAt: '' }
+  let tick = 0
+  run = setInterval(() => {
+    const p = m.progress!
+    if (tick++ < 2) { p.stage = 'preparing' } else {
+      p.stage = 'transcribing'
+      p.total = todo.length
+      p.waitSec = tick === 5 ? 20 : 0 // once, the per-minute limit
+      const s = todo[p.done]
+      if (s) { s.text = s.text || `(transcribed again) part at ${s.start} s`; s.failed = ''; p.done++ }
+    }
+    if (p.stage === 'transcribing' && p.done >= p.total) finish(m)
+    emit('meetingsChanged')
+  }, 700)
+}
+function finish(m: Meeting) {
+  clearInterval(run)
+  m.progress = undefined
+  m.status = m.segments.some((s) => s.failed) ? 'failed' : 'done'
+  if (m.status === 'failed') m.error = 'Stopped. Some parts are not transcribed yet; Try again sends only those.'
+}
 
 const settings: Settings = {
   meetingsFolder: '~/Meetings',
   transcribeMode: 'live',
   transcriber: 'gemini-3.5-transcribe',
   transcribers: [
-    { id: 'gemini-3.5-transcribe', name: 'Gemini 3.5 Transcribe', note: 'Tested on our Bangla audio · ~$0.35/hour', available: true, needsKey: true },
+    { id: 'gemini-3.5-transcribe', name: 'Gemini 3.5 Transcribe', note: 'Tested on our Bangla audio · ~$0.35/hour · a new API key allows only 100 parts a day, less than one meeting', available: true, needsKey: true },
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', note: 'Same Gemini key · far higher daily limit · matched Transcribe in a spot check, not benchmarked yet', available: true, needsKey: true },
     { id: 'local-whisper-bangla', name: 'Local Whisper (Bangla)', note: 'On this Mac, free, offline · Bangla only: English words come out in Bangla letters · 1.5 GB', available: true, needsKey: false },
     { id: 'local-whisper-english', name: 'Local Whisper (English)', note: 'On this Mac, free, offline · English-only meetings · 1.6 GB', available: true, needsKey: false },
     { id: 'soniox', name: 'Soniox', note: 'Not added yet', available: false, needsKey: true },
@@ -81,6 +127,8 @@ export async function mockHost(method: keyof HostApi, params: unknown): Promise<
     case 'stopRecording': recording = { state: 'idle', message: 'Saved' }; return
     case 'listMeetings': return meetings.map(({ id, startedAt, durationSec, status, preview }) => ({ id, startedAt, durationSec, status, preview }))
     case 'getMeeting': return structuredClone(meetings.find((m) => m.id === p.id)) // a fresh copy, like the real bridge
+    case 'transcribe': mockTranscribe(meetings.find((m) => m.id === p.id)!, Boolean(p.onlyFailed)); return
+    case 'stopTranscribing': setTimeout(() => { finish(meetings.find((m) => m.id === p.id)!); emit('meetingsChanged') }, 1500); return
     case 'deleteMeeting': meetings.splice(meetings.findIndex((m) => m.id === p.id), 1); return
     case 'getSettings': return { ...settings }
     case 'setTranscribeMode': settings.transcribeMode = p.mode as Settings['transcribeMode']; return

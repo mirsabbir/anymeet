@@ -30,6 +30,7 @@ import numpy as np
 
 from . import audio, pipeline, speakers
 from .base import Transcriber
+from .progress import Progress
 
 RATE = 16_000
 FRAME = RATE // 50  # 20 ms
@@ -164,9 +165,13 @@ def _flac(samples: np.ndarray, path: Path) -> Path:
 
 
 def run(folder: Path, labels: dict[str, str], t: Transcriber, glossary: list[str], workers: int = 8,
-        poll: float = POLL, diarize: Callable[[Path], list[speakers.Turn]] | None = None) -> int:
+        poll: float = POLL, diarize: Callable[[Path], list[speakers.Turn]] | None = None,
+        progress: Progress | None = None) -> int:
     """Transcribe <folder>/live/*.wav as they grow; labels maps a file's stem to its
-    speaker. Returns the number of failed chunks."""
+    speaker. Returns the number of failed chunks. pipeline.STOP ends it early: chunks
+    already sent finish, the rest is left untranscribed (Try again sends it later)."""
+    progress = progress or Progress(None)
+    progress.stage("transcribing", total=0)
     live = folder / "live"
     tracks: dict[str, Track] = {}
     jobs: list[tuple[pipeline.Segment, Future]] = []
@@ -196,15 +201,17 @@ def run(folder: Path, labels: dict[str, str], t: Transcriber, glossary: list[str
                     future = pool.submit(pipeline._transcribe, t, seg, _flac(clip, Path(tmp) / f"{n:05d}.flac"), glossary)
                     with lock:
                         jobs.append((seg, future))
-                    future.add_done_callback(lambda _: write())
+                    progress.add_total()
+                    future.add_done_callback(lambda _, s=seg: (progress.part_done(failed=bool(s.failed)), write()))
                     n += 1
                     print(f"[{audio_clock(a)}] {track.speaker}: chunk {n} sent ({b - a:.0f}s)", flush=True)
-            if finished or time.monotonic() - last_audio > STALL_TIMEOUT:
+            if finished or pipeline.STOP.is_set() or time.monotonic() - last_audio > STALL_TIMEOUT:
                 break
             time.sleep(poll)
         for _, future in jobs:
             future.result()
-        if diarize:
+        if diarize and not pipeline.STOP.is_set():
+            progress.stage("speakers")
             for stem, track in tracks.items():
                 if track.speaker == pipeline.OTHERS:
                     redo = _split_speakers(live / f"{stem}.wav", jobs, diarize, Path(tmp),
@@ -214,7 +221,8 @@ def run(folder: Path, labels: dict[str, str], t: Transcriber, glossary: list[str
                     for _, future in redo:
                         future.result()
     failed = write()
-    shutil.rmtree(live, ignore_errors=True)
+    if (live / "done").exists() or not pipeline.STOP.is_set():
+        shutil.rmtree(live, ignore_errors=True)  # stopped mid-recording: the recorder is still writing there
     return failed
 
 
