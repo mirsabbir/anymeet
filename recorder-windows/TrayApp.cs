@@ -165,6 +165,7 @@ sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit AnyMeet", null, async (_, _) =>
         {
+            if (!CloudJobs.ConfirmQuit()) return;  // a backup or download is running and the user kept it
             if (state == State.Recording) await StopAsync(transcribe: false);
             tray.Visible = false;
             ExitThread();

@@ -40,9 +40,31 @@ enum CloudJobs {
         }
     }
 
-    /// At launch: list the meetings that are only in the cloud, and finish backups that were cut off.
+    /// At launch: list the meetings that are only in the cloud, and finish backups and downloads that were cut off.
     static func atLaunch() {
         if Preferences.cloudReady { try? run(["sync", Preferences.meetingsRoot.path, "--resume"]) }
+    }
+
+    /// Jobs that move bytes and are running now: a job.json without an error, written in the last 30 s (transcriber/job.py).
+    static func running() -> [(folder: URL, job: [String: Any])] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: Preferences.meetingsRoot.path)) ?? []
+        return names.compactMap { name in
+            let folder = Preferences.meetingsRoot.appending(path: name)
+            guard let data = try? Data(contentsOf: folder.appending(path: "job.json")),
+                  let job = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  job["error"] == nil, ["backup", "restore", "free"].contains(job["kind"] as? String ?? ""),
+                  let stamp = (job["updatedAt"] as? String).flatMap(ISO8601DateFormatter().date(from:)),
+                  Date().timeIntervalSince(stamp) < 30 else { return nil }
+            return (folder, job)
+        }
+    }
+
+    /// Asks the running jobs to stop: each ends within seconds, keeping what it sent, and
+    /// `sync --resume` at the next launch goes on from there.
+    static func stopAll() {
+        for (folder, _) in running() {
+            FileManager.default.createFile(atPath: folder.appending(path: "job.stop").path, contents: nil)
+        }
     }
 
     /// The meeting folders for these ids that no recording or transcription is using now.

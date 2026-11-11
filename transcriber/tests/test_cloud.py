@@ -427,3 +427,35 @@ def test_a_job_that_fails_says_why_in_job_json(tmp_path, monkeypatch):
     monkeypatch.setenv("ANYMEET_CLOUD_TOKEN", TOKEN)
     assert commands._each("backup", [folder], vanished) == 1
     assert job.read(folder)["error"].startswith("No such file or directory: ")
+
+
+def test_sync_resume_finishes_cut_off_backups_and_downloads(fake, meeting, tmp_path, monkeypatch):
+    """What happens at the next launch after quitting (or a crash) mid-job."""
+    from argparse import Namespace
+    from transcriber import commands
+    backup(fake, meeting)
+    original = (meeting / "display-1.mp4").read_bytes()
+    (meeting / "display-1.mp4").unlink()
+    other = tmp_path / "2026-11-11_1600"
+    other.mkdir()
+    (other / "mic.m4a").write_bytes(os.urandom(300 * KiB))
+    calls = []
+
+    def crash_after_two(request):
+        if request.url.host == "s3.test":
+            if len(calls) == 2:
+                raise Crash()
+            calls.append(1)
+    fake.fault = crash_after_two
+    with pytest.raises(Crash):
+        run(lambda api, f, j: cloud.restore(api, f, [], j), fake, meeting, "restore")
+    calls.clear()
+    with pytest.raises(Crash):
+        backup(fake, other)
+    assert (meeting / "display-1.mp4.part.json").exists() and cloud.load(other)["uploads"]
+
+    fake.fault = lambda request: None
+    monkeypatch.setattr(commands, "_api", lambda jobs=None: api_for(fake, jobs))
+    assert commands._sync(Namespace(root=tmp_path, resume=True)) == 0
+    assert (meeting / "display-1.mp4").read_bytes() == original
+    assert fake.objects[f"{other.name}/mic.m4a"]["data"] == (other / "mic.m4a").read_bytes()

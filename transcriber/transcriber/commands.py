@@ -3,7 +3,7 @@ anymeet restore <folder> [--files P…]   download from the cloud what is missin
 anymeet free <folder>...               delete the recordings here that are safely in the cloud
 anymeet forget <folder>                delete the meeting's cloud copy; this computer's copy stays
 anymeet sync <meetings folder> [--resume]  match every meeting to the cloud; --resume then finishes
-                                         backups that were cut off
+                                         backups and downloads that were cut off
 anymeet check                          test the server address and token
 anymeet summarize <folder> [--language auto|en|bn] [--backup]
 
@@ -138,8 +138,13 @@ def _sync(args) -> int:
     print(json.dumps(cloud.sync(_api(), root)), flush=True)
     if not args.resume:
         return 0
-    cut_off = [f for f in root.iterdir() if cloud.load(f)["uploads"] or (job.read(f) or {}).get("kind") == "backup"]
-    return _backup(argparse.Namespace(folders=cut_off)) if cut_off else 0
+    folders = [f for f in root.iterdir() if f.is_dir()]
+    uploads = [f for f in folders if cloud.load(f)["uploads"] or (job.read(f) or {}).get("kind") == "backup"]
+    downloads = [f for f in folders if next(f.rglob("*.part.json"), None)]
+    failed = _backup(argparse.Namespace(folders=uploads)) if uploads else 0
+    for folder in downloads:
+        failed += _restore(argparse.Namespace(folder=folder, files=[]))
+    return failed
 
 
 def _check(_args) -> int:

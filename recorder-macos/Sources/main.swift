@@ -83,6 +83,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Quitting while a backup or download runs: asked first, since it stops it. A logout,
+    /// restart or shutdown isn't held up; the job stops either way and goes on at the next launch.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let jobs = CloudJobs.running()
+        guard !jobs.isEmpty, !SelfTest.enabled else { return .terminateNow }
+        let reason = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.enumCodeValue
+        let systemQuit = [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAERestart, kAEShowShutdownDialog, kAEShutDown]
+            .map { AEEventID($0) }.contains(reason ?? 0)
+        if !systemQuit && !Self.confirmQuit(jobs) { return .terminateCancel }
+        CloudJobs.stopAll()
+        return .terminateNow
+    }
+
+    private static func confirmQuit(_ jobs: [(folder: URL, job: [String: Any])]) -> Bool {
+        let verbs = ["backup": "backing up", "restore": "downloading", "free": "freeing up space for"]
+        let first = jobs[0].job
+        let alert = NSAlert()
+        alert.messageText = "AnyMeet is still \(verbs[first["kind"] as? String ?? ""] ?? "working on") "
+            + (jobs.count == 1 ? "a meeting" : "\(jobs.count) meetings")
+        let done = first["done"] as? Double ?? 0, total = first["total"] as? Double ?? 0
+        let file = (first["file"] as? String).map { "\($0) · " } ?? ""
+        alert.informativeText = (total > 0 ? "\(file)\(ByteCountFormatter.string(fromByteCount: Int64(done), countStyle: .file)) of "
+            + "\(ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file)).\n\n" : "")
+            + "If you quit now, it stops and goes on from where it stopped the next time you open AnyMeet. Nothing already transferred is lost."
+        alert.addButton(withTitle: "Keep Running")
+        alert.addButton(withTitle: "Quit")
+        NSApp.activate()
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
     /// Double-clicking the app again while it runs brings the Meetings window back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         MainActor.assumeIsolated { WebWindows.shared.showMeetings() }

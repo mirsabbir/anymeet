@@ -85,7 +85,7 @@ static class MeetingStore
     /// A JSON file in the folder, or null when it's missing or being replaced right now. Opened so the
     /// transcriber can still replace or delete it meanwhile (os.replace fails on a file open without that).
     /// </summary>
-    static JsonElement? ReadJson(string folder, string name)
+    public static JsonElement? ReadJson(string folder, string name)
     {
         var path = Path.Combine(folder, name);
         if (!File.Exists(path)) return null;
