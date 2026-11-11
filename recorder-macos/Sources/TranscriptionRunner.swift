@@ -93,6 +93,7 @@ final class TranscriptionRunner {
                 self?.processes[folder.path] = nil
                 NotificationCenter.default.post(name: Self.meetingsChanged, object: nil)
                 completion?(p.terminationStatus == 0)
+                CloudJobs.afterTranscript(folder)  // summary and backup, if they are on
             }
         }
         do { try process.run() } catch { return fail("couldn't start uv: \(error.localizedDescription)") }

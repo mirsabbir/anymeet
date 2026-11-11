@@ -25,6 +25,8 @@ enum Preferences {
     ]
     static let keyName = "GEMINI_API_KEY"  // both Gemini models' key
     static let hfTokenName = "HF_TOKEN"  // Hugging Face, read by the transcriber to download the speaker model
+    // Read by `anymeet` (transcriber/commands.py): the AnyMeet Cloud server, its token, and Claude's key.
+    static let cloudURLName = "ANYMEET_CLOUD_URL", cloudTokenName = "ANYMEET_CLOUD_TOKEN", anthropicKeyName = "ANTHROPIC_API_KEY"
 
     /// When to transcribe: "live" (while recording), "after" (when recording stops) or "off".
     static var transcribeMode: String {
@@ -91,6 +93,29 @@ enum Preferences {
 
     static var apiKeySet: Bool { isSet(keyName) }
     static var hfTokenSet: Bool { isSet(hfTokenName) }
+    static var cloudTokenSet: Bool { isSet(cloudTokenName) }
+    static var anthropicKeySet: Bool { isSet(anthropicKeyName) }
+    /// The server address isn't secret, so the UI shows it.
+    static var cloudURL: String {
+        envLines().first { $0.hasPrefix("\(cloudURLName)=") }.map { String($0.dropFirst(cloudURLName.count + 1)) } ?? ""
+    }
+    static var cloudReady: Bool { !cloudURL.isEmpty && cloudTokenSet }
+
+    /// Back up each meeting once its transcript is ready.
+    static var autoBackup: Bool {
+        get { UserDefaults.standard.bool(forKey: "autoBackup") }
+        set { UserDefaults.standard.set(newValue, forKey: "autoBackup") }
+    }
+    /// Summarize each meeting once its transcript is ready, if it has no summary yet.
+    static var autoSummary: Bool {
+        get { UserDefaults.standard.bool(forKey: "autoSummary") }
+        set { UserDefaults.standard.set(newValue, forKey: "autoSummary") }
+    }
+    /// "auto" (the meeting's own language), "en" or "bn".
+    static var summaryLanguage: String {
+        get { UserDefaults.standard.string(forKey: "summaryLanguage") ?? "auto" }
+        set { UserDefaults.standard.set(newValue, forKey: "summaryLanguage") }
+    }
 
     /// True when .env has a non-empty value for the name. The value itself is never returned to the UI.
     private static func isSet(_ name: String) -> Bool {
@@ -99,6 +124,12 @@ enum Preferences {
 
     static func setApiKey(_ key: String) throws { try setSecret(key, as: keyName) }
     static func setHfToken(_ token: String) throws { try setSecret(token, as: hfTokenName) }
+    static func setAnthropicKey(_ key: String) throws { try setSecret(key, as: anthropicKeyName) }
+    /// An empty token keeps the saved one.
+    static func setCloud(url: String, token: String) throws {
+        try setSecret(url, as: cloudURLName)
+        if !token.isEmpty { try setSecret(token, as: cloudTokenName) }
+    }
 
     private static func setSecret(_ value: String, as name: String) throws {
         guard let url = configFile(".env") else { return }

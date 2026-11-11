@@ -110,6 +110,7 @@ static class TranscriptionRunner
                 processes.Remove(folder);
                 RaiseMeetingsChanged();
                 completion?.Invoke(ok);
+                CloudJobs.AfterTranscript(folder);  // summary and backup, if they are on
             }, null);
         });
         return true;

@@ -18,6 +18,39 @@ export interface MeetingSummary {
   durationSec: number
   status: TranscriptStatus
   preview: string // start of the transcript, for the list and search
+  title?: string // the AI summary's title, when there is one
+  local: Record<string, number> // the files directly in the meeting folder, with their sizes in bytes
+  cloud?: Record<string, CloudFile> // what the cloud holds, by path in the folder: <meeting>/cloud.json "files"
+  job?: MeetingJob // a background job on the meeting, or why the last one failed
+}
+
+/** A verified cloud copy of a file (transcriber/cloud.py). */
+export interface CloudFile {
+  size: number
+  etag: string
+}
+
+/** <meeting>/job.json (transcriber/job.py): running while updatedAt keeps moving (within 30 s). */
+export interface MeetingJob {
+  kind: 'backup' | 'restore' | 'free' | 'forget' | 'summary'
+  done?: number // bytes so far, of total
+  total?: number
+  file?: string // the file being sent or fetched
+  waiting?: boolean // queued behind another meeting of the same run
+  error?: string // the job failed, and why, in words the user can act on
+  updatedAt: string
+}
+
+/** <meeting>/summary.json, written by Claude from the transcript (transcriber/summary.py). */
+export interface Summary {
+  title: string
+  overview: string
+  decisions: string[]
+  actionItems: { owner: string; task: string; due: string }[]
+  topics: { start: number; title: string; summary: string }[]
+  openQuestions: string[]
+  model: string
+  createdAt: string
 }
 
 export interface MeetingFile {
@@ -47,6 +80,7 @@ export interface Meeting extends MeetingSummary {
   transcriptText: string // plain text for copying
   error?: string // last line of transcribe.log when transcription failed: the transcriber says why there
   progress?: TranscribeProgress // while status is 'transcribing', once the transcriber has started
+  summary?: Summary
 }
 
 export interface Transcriber {
@@ -91,7 +125,16 @@ export interface Settings {
   glossary: string[]
   displays: string[]
   microphone: string
+  cloudUrl: string // the AnyMeet Cloud server; "" when cloud backup isn't set up
+  cloudTokenSet: boolean
+  autoBackup: boolean // back up each meeting once its transcript is ready (or recording stops, with transcription off)
+  anthropicKeySet: boolean
+  autoSummary: boolean // summarize each meeting once its transcript is ready, if it has no summary yet
+  summaryLanguage: SummaryLanguage
 }
+
+/** auto: the language most of the meeting was in */
+export type SummaryLanguage = 'auto' | 'en' | 'bn'
 
 export type RecordingState = 'idle' | 'starting' | 'recording' | 'stopping'
 
@@ -118,7 +161,7 @@ export interface HostApi {
   getMeeting(p: { id: string }): Meeting
   transcribe(p: { id: string; onlyFailed?: boolean }): void // onlyFailed: send again only the parts marked not transcribed
   stopTranscribing(p: { id: string }): void // nothing more is sent; parts already sent finish, so it ends within seconds
-  deleteMeeting(p: { id: string }): void // moves the folder to the Trash / Recycle Bin
+  deleteMeeting(p: { id: string; cloudToo?: boolean }): void // moves the folder to the Trash / Recycle Bin; cloudToo deletes the cloud copy first
   openPath(p: { path: string }): void
   getSettings(): Settings
   setTranscribeMode(p: { mode: TranscribeMode }): void
@@ -132,6 +175,20 @@ export interface HostApi {
   renameSpeaker(p: { id: string; from: string; to: string }): void // in that meeting's transcript; same name = merge
   openLink(p: { url: string }): void // in the default browser; https://huggingface.co only
   setGlossary(p: { terms: string[] }): void
+  // Cloud backup and summaries run as `anymeet` jobs and report through MeetingSummary.job.
+  backup(p: { ids: string[] }): void // sends what is new or changed, one meeting after another
+  restore(p: { id: string; files?: string[] }): void // downloads the files named, or everything missing here
+  freeUp(p: { ids: string[] }): void // deletes the recordings here that are safely in the cloud
+  forgetCloud(p: { ids: string[] }): void // deletes the cloud copies; copies here stay, and a meeting only in the cloud goes
+  syncCloud(): void // reads again what the cloud holds (also done when the app opens)
+  stopJob(p: { id: string }): void
+  summarize(p: { id: string }): void
+  checkCloud(): { meetings: number; bytes: number } // rejects with the reason when the server can't be reached
+  setCloud(p: { url: string; token: string }): void // token "" keeps the saved one
+  setAutoBackup(p: { on: boolean }): void
+  setAnthropicKey(p: { key: string }): void
+  setAutoSummary(p: { on: boolean }): void
+  setSummaryLanguage(p: { language: SummaryLanguage }): void
 }
 
 // Pushed by the host when something changes outside the UI.

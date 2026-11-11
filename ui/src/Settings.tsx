@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { call, on } from './bridge'
+import { CloudAndAi } from './CloudSettings'
 import { bytes } from './format'
 import { Icon, type IconName } from './icons'
 import type { ModelState, Processor, Settings as SettingsData, TranscribeMode, Transcriber } from './types'
@@ -9,6 +10,7 @@ const TABS: [Tab, string, IconName][] = [
   ['recording', 'Recording', 'record'],
   ['transcription', 'Transcription', 'mic'],
   ['glossary', 'Glossary', 'search'],
+  ['cloud', 'Cloud & AI', 'cloud'],
   ['about', 'About & updates', 'refresh'],
 ]
 const MODES: [TranscribeMode, string, string][] = [
@@ -16,7 +18,7 @@ const MODES: [TranscribeMode, string, string][] = [
   ['after', 'After the meeting', 'The whole recording is transcribed when you stop'],
   ['off', 'Off', 'Transcribe later from the meeting page'],
 ]
-type Tab = 'recording' | 'transcription' | 'glossary' | 'about'
+type Tab = 'recording' | 'transcription' | 'glossary' | 'cloud' | 'about'
 const SPEAKER_MODEL = 'speakers-pyannote'
 const SPEAKER_MODEL_PAGE = 'https://huggingface.co/pyannote/speaker-diarization-community-1'
 const TOKENS_PAGE = 'https://huggingface.co/settings/tokens'
@@ -43,6 +45,7 @@ export function Settings({ initialTab }: { initialTab?: string }) {
         {s && tab === 'recording' && <Recording s={s} />}
         {s && tab === 'transcription' && <Transcription s={s} reload={load} />}
         {s && tab === 'glossary' && <Glossary s={s} reload={load} />}
+        {s && tab === 'cloud' && <CloudAndAi s={s} reload={load} />}
         {tab === 'about' && <About />}
       </main>
     </div>

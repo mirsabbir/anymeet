@@ -36,6 +36,7 @@ enum MeetingStore {
             return "[\(clock(s["start"] as? Double ?? 0))] \(s["speaker"] as? String ?? ""): \(text)"
         }.joined(separator: "\n\n")
         meeting["files"] = await files(folder)
+        meeting["summary"] = readJSON(folder, "summary.json")
         if meeting["status"] as? String == "failed", let log = try? String(contentsOf: folder.appending(path: "transcribe.log"), encoding: .utf8) {
             meeting["error"] = log.split(separator: "\n").last.map(String.init) ?? ""  // the transcriber's own last words
         }
@@ -61,19 +62,38 @@ enum MeetingStore {
             status = FileManager.default.fileExists(atPath: folder.appending(path: "transcribe.log").path) ? "failed" : "none"
         }
         let preview = segments?.lazy.compactMap { $0["text"] as? String }.first { !$0.isEmpty } ?? ""
-        return [
+        var summary: [String: Any] = [
             "id": id,
             "startedAt": startedAt(id: id, folder: folder),
             "durationSec": await duration(folder),
             "status": status,
             "preview": String(preview.prefix(140)),
+            "local": localSizes(folder),
         ]
+        // The cloud copy, a background job, and the AI summary's title (transcriber/cloud.py, job.py, summary.py).
+        summary["cloud"] = readJSON(folder, "cloud.json")?["files"]
+        summary["job"] = readJSON(folder, "job.json")
+        summary["title"] = readJSON(folder, "summary.json")?["title"]
+        return summary
     }
 
-    private static func readTranscript(_ folder: URL) -> [String: Any]? {
-        guard let data = try? Data(contentsOf: folder.appending(path: "transcript.json")) else { return nil }
+    private static func readJSON(_ folder: URL, _ name: String) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: folder.appending(path: name)) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
+
+    /// The files directly in the folder and their sizes: the UI compares them with the cloud's.
+    private static func localSizes(_ folder: URL) -> [String: Int] {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])) ?? []
+        var sizes: [String: Int] = [:]
+        for url in urls {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), values.isRegularFile == true else { continue }
+            sizes[url.lastPathComponent] = values.fileSize ?? 0
+        }
+        return sizes
+    }
+
+    private static func readTranscript(_ folder: URL) -> [String: Any]? { readJSON(folder, "transcript.json") }
 
     private static func startedAt(id: String, folder: URL) -> String {
         let parse = DateFormatter()

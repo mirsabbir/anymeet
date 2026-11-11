@@ -8,6 +8,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "numpy>=1.26",
     "huggingface_hub>=1.0",  # local model status and downloads, without torch
+    "anthropic>=2.8",  # AI summaries (summary.py)
+    "httpx>=0.28",  # cloud backup (cloud.py)
 ]
 
 [project.optional-dependencies]
@@ -34,6 +36,7 @@ cpu = [
 
 [project.scripts]
 transcribe = "transcriber.cli:main"
+anymeet = "transcriber.commands:main"
 
 [tool.uv]
 # Keeps two PyTorch builds for Windows in the lock: PyPI's unless `--extra cuda` is passed.
