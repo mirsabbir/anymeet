@@ -35,6 +35,8 @@ class FakeCloud:
         self.fault = lambda request: None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host != "s3.test" or request.method != "PUT":
+            request.read()  # a part's body is read in s3(), piece by piece, like a socket would
         early = self.fault(request)
         if early is not None:
             return early
@@ -102,6 +104,7 @@ class FakeCloud:
     # S3
     def s3(self, request: httpx.Request) -> httpx.Response:
         if request.method == "PUT":
+            request.read()
             _, uid, n = request.url.path.rsplit("/", 2)
             signed = parse_qs(urlparse(str(request.url)).query)["md5"][0]
             if request.headers.get("content-md5") != signed:
@@ -459,3 +462,24 @@ def test_sync_resume_finishes_cut_off_backups_and_downloads(fake, meeting, tmp_p
     assert commands._sync(Namespace(root=tmp_path, resume=True)) == 0
     assert (meeting / "display-1.mp4").read_bytes() == original
     assert fake.objects[f"{other.name}/mic.m4a"]["data"] == (other / "mic.m4a").read_bytes()
+
+
+def test_stop_ends_a_part_in_flight_at_once(fake, meeting, monkeypatch):
+    """Quit or Stop while a big part is on its way: it must not wait for the part to finish."""
+    monkeypatch.setattr(cloud, "PIECE", 1024)
+    sent = []
+
+    def slow_link(request):  # ~1 KiB every 20 ms: a 64 KiB part would take over a second
+        if request.method == "PUT":
+            for piece in request.stream:
+                sent.append(len(piece))
+                if len(sent) == 3:
+                    (meeting / job.STOP).touch()
+                time.sleep(0.02)
+            return httpx.Response(200, headers={"ETag": '"x"'})
+        return None
+    fake.fault = slow_link
+    started = time.monotonic()
+    with pytest.raises(cloud.Stopped):
+        backup(fake, meeting)
+    assert time.monotonic() - started < 3 and sum(sent) < 200 * 1024

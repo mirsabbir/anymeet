@@ -103,9 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "AnyMeet is still \(verbs[first["kind"] as? String ?? ""] ?? "working on") "
             + (jobs.count == 1 ? "a meeting" : "\(jobs.count) meetings")
         let done = first["done"] as? Double ?? 0, total = first["total"] as? Double ?? 0
-        let file = (first["file"] as? String).map { "\($0) · " } ?? ""
-        alert.informativeText = (total > 0 ? "\(file)\(ByteCountFormatter.string(fromByteCount: Int64(done), countStyle: .file)) of "
-            + "\(ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file)).\n\n" : "")
+        let file = (first["file"] as? String).map { " · now \($0)" } ?? ""
+        alert.informativeText = (total > 0 ? "\(ByteCountFormatter.string(fromByteCount: Int64(done), countStyle: .file)) of "
+            + "\(ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file))\(file).\n\n" : "")
             + "If you quit now, it stops and goes on from where it stopped the next time you open AnyMeet. Nothing already transferred is lost."
         alert.addButton(withTitle: "Keep Running")
         alert.addButton(withTitle: "Quit")

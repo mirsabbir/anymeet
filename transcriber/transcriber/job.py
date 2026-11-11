@@ -108,8 +108,7 @@ class Jobs:
             for folder in self.folders:
                 if (folder / STOP).exists():
                     self._stop(folder)
-                else:
-                    self._write(folder)
+                self._write(folder)  # also while it stops: the job is still there until it ends
 
     def _stop(self, folder: Path) -> None:
         if folder == self.current:

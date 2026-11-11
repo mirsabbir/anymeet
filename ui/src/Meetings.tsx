@@ -270,7 +270,7 @@ function MeetingDetail({ id, query, settings, onDeleted }: { id: string; query: 
           <button key={f.name} className="track" onClick={() => play(f)} aria-current={playing?.file.name === f.name || undefined}>
             <span className={`dot ${f.name.startsWith('system') ? 'others' : ''}`} />
             <span style={{ flex: 1 }}><span style={{ fontWeight: 600, fontSize: 13 }}>{f.name}</span><br /><span className="small muted">{f.info}</span></span>
-            {meeting.cloud?.[f.name] && <Icon name="cloud" label="Also in the cloud" />}
+            {meeting.cloud?.[f.name] && <span title="Also in the cloud"><Icon name="cloud" label="Also in the cloud" /></span>}
             <Icon name="play" />
           </button>
         ))}
@@ -467,7 +467,8 @@ function highlight(text: string, query: string) {
 /** "In the cloud · safe to free 1.86 GB" and the like, in the meeting's header. */
 function CloudLine({ v }: { v: CloudView }) {
   if (v.state === 'saved') {
-    return <span className="cloud-line ok"><Icon name="cloud" />Backed up{v.freeable > 0 && ` · safe to remove ${bytes(v.freeable)} from this computer`}</span>
+    const note = v.freeable > 0 ? ` · safe to remove ${bytes(v.freeable)} from this computer` : v.missing.length > 0 ? ' · video and audio only in the cloud' : ''
+    return <span className="cloud-line ok"><Icon name="cloud" />Backed up{note}</span>
   }
   if (v.state === 'cloudOnly') return <span className="cloud-line"><Icon name="cloud" />Only in the cloud</span>
   if (v.state === 'partial') return <span className="cloud-line"><Icon name="cloud" />Partly backed up</span>
@@ -485,7 +486,7 @@ function JobBanner({ v, onStop, onRetry }: { v: CloudView; onStop: () => void; o
         <span className="spinner small-spinner" />
         <span style={{ flex: 1 }}>
           {text}
-          {counting && <span className="small"> · {j.file ? `${j.file} · ` : ''}{bytes(j.done ?? 0)} of {bytes(j.total!)}</span>}
+          {counting && <span className="small"> · {bytes(j.done ?? 0)} of {bytes(j.total!)}{j.file ? ` · now ${j.file}` : ''}</span>}
         </span>
         {(j.kind === 'backup' || j.kind === 'restore') && <button className="btn" onClick={onStop}><Icon name="close" />Stop</button>}
         {counting && (

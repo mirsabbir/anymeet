@@ -110,6 +110,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
             if TranscriptionRunner.shared.running.contains(folder.path) { throw BridgeError("wait until the transcript is finished") }
             if p["cloudToo"] as? Bool == true {  // the cloud copy first: if that fails, nothing is gone
+                try CloudJobs.ready()
                 _ = try await TranscriptionRunner.output(["anymeet", "forget", folder.path])
             }
             if FileManager.default.fileExists(atPath: folder.path) {  // forget removes a folder that held only cloud records
@@ -131,6 +132,7 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
             FileManager.default.createFile(atPath: folder.appending(path: "job.stop").path, contents: nil)
         case "checkCloud":
+            try CloudJobs.ready()
             let out = try await TranscriptionRunner.output(["anymeet", "check"])
             return try JSONSerialization.jsonObject(with: out)
         case "setCloud":

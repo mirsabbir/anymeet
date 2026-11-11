@@ -30,6 +30,7 @@ MiB = 1024 * 1024
 PART = 16 * MiB
 WORKERS = 4  # parts uploading at once
 DOWNLOAD_WORKERS = 8  # ranges downloading at once
+PIECE = 256 * 1024  # a part goes out in pieces this big, so Stop ends an upload in flight at once
 PATIENCE = float(os.environ.get("ANYMEET_CLOUD_PATIENCE", 600))
 BACKOFF = 1.0  # the first wait after a failure; it doubles up to 30 s
 STATE = "cloud.json"
@@ -251,7 +252,7 @@ def _put_part(api: Api, key: str, upload_id: str, n: int, data: bytes, digest: b
 
     def attempt() -> None:
         url = api.call("POST", "/uploads/sign", json={"key": key, "uploadId": upload_id, "n": n, "md5": md5})["url"]
-        r = api.s3.put(url, content=data, headers={"Content-MD5": md5})
+        r = api.s3.put(url, content=_pieces(data, api.halt), headers={"Content-MD5": md5, "Content-Length": str(len(data))})
         if r.status_code == 404:
             raise _Gone("upload")
         if r.status_code != 200:  # BadDigest, RequestTimeout, an expired URL, S3 busy: send it again
@@ -259,6 +260,15 @@ def _put_part(api: Api, key: str, upload_id: str, n: int, data: bytes, digest: b
         if r.headers.get("etag", "").strip('"') != digest.hex():
             raise _Retry(f"S3 stored different bytes for part {n}")
     retry(attempt, api.halt)
+
+
+def _pieces(data: bytes, halt: Event):
+    """The part in PIECE-sized pieces, ending the request as soon as `halt` is set. Content-Length
+    is given, so S3 gets a plain body, not chunked encoding (which presigned PUTs refuse)."""
+    for at in range(0, len(data), PIECE):
+        if halt.is_set():
+            raise Stopped()
+        yield data[at:at + PIECE]
 
 
 # Restore ------------------------------------------------------------------------------------

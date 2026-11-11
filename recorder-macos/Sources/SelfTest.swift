@@ -450,7 +450,7 @@ enum SelfTest {
         let freed = await wait(120) { recordings.allSatisfy { !FileManager.default.fileExists(atPath: folder.appending(path: $0).path) } }
         check("cloud: recordings deleted from this computer", freed, recordings.joined(separator: ", "))
         check("cloud: Download recordings offered", await until(10, ".detail-head", contains: "Download recordings"), await text(".detail-head .actions"))
-        check("cloud: files listed as only in the cloud", await until(10, ".files", contains: "Only in the cloud"), await text(".files"))
+        check("cloud: files listed as only in the cloud", await until(10, ".files", contains: "ONLY IN THE CLOUD"), await text(".files"))  // the heading is styled uppercase
         let segments = (try? await web.evaluateJavaScript("document.querySelectorAll('.segment').length")) as? Int ?? 0
         check("cloud: transcript still shown", segments > 0 || !names.contains("transcript.json"), "\(segments) segments")
         await shot("3-freed")

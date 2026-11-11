@@ -15,6 +15,7 @@ static class CloudJobs
 
     public static void Run(params string[] args)
     {
+        Ready();
         var ui = SynchronizationContext.Current;
         Directory.CreateDirectory(Path.GetDirectoryName(Log)!);
         if (File.Exists(Log) && new FileInfo(Log).Length > 1_000_000) File.Delete(Log);  // only for looking into a problem
@@ -38,6 +39,14 @@ static class CloudJobs
             lock (log) log.Dispose();
             ui?.Post(_ => TranscriptionRunner.RaiseMeetingsChanged(), null);
         });
+    }
+
+    /// <summary>Throws when the transcriber checkout predates `anymeet`, which uv would only report as "Failed to spawn".</summary>
+    public static void Ready()
+    {
+        var project = Preferences.TranscriberProject;
+        if (project != null && !File.Exists(Path.Combine(project, "transcriber", "commands.py")))
+            throw new InvalidOperationException($"The transcriber at {project} is older than this app: update it (git pull) to use cloud backup and AI summaries.");
     }
 
     /// <summary>
@@ -91,7 +100,7 @@ static class CloudJobs
         var job = jobs[0].Job;
         var verb = job.GetProperty("kind").GetString() switch { "backup" => "backing up", "restore" => "downloading", _ => "freeing up space for" };
         var progress = job.TryGetProperty("total", out var total) && total.GetDouble() > 0
-            ? $"{(job.TryGetProperty("file", out var f) ? f.GetString() + " · " : "")}{job.GetProperty("done").GetDouble() / 1e9:0.00} of {total.GetDouble() / 1e9:0.00} GB.\n\n" : "";
+            ? $"{job.GetProperty("done").GetDouble() / 1e9:0.00} of {total.GetDouble() / 1e9:0.00} GB{(job.TryGetProperty("file", out var f) ? " · now " + f.GetString() : "")}.\n\n" : "";
         var answer = MessageBox.Show(
             $"{progress}If you quit now, it stops and goes on from where it stopped the next time you open AnyMeet. Nothing already transferred is lost.\n\nQuit anyway?",
             $"AnyMeet is still {verb} {(jobs.Count == 1 ? "a meeting" : $"{jobs.Count} meetings")}",

@@ -6,6 +6,7 @@ import Foundation
 /// settings folder. Main thread only.
 enum CloudJobs {
     static func run(_ args: [String]) throws {
+        try ready()
         let process = try TranscriptionRunner.uvProcess(["anymeet"] + args)
         let log = Preferences.configFolder.appending(path: "anymeet.log")
         if ((try? FileManager.default.attributesOfItem(atPath: log.path)[.size] as? Int) ?? 0) > 1_000_000 {
@@ -24,6 +25,14 @@ enum CloudJobs {
         // The job file shows up once uv has started Python.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             NotificationCenter.default.post(name: TranscriptionRunner.meetingsChanged, object: nil)
+        }
+    }
+
+    /// Throws when the transcriber checkout predates `anymeet`, which uv would only report as "Failed to spawn".
+    static func ready() throws {
+        guard let project = Preferences.transcriberProject else { return }  // uvProcess says what's missing
+        if !FileManager.default.fileExists(atPath: project + "/transcriber/commands.py") {
+            throw BridgeError("The transcriber at \(project) is older than this app: update it (git pull) to use cloud backup and AI summaries.")
         }
     }
 

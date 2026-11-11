@@ -112,7 +112,10 @@ sealed class WebWindow : Form
                 var meeting = MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found");
                 if (TranscriptionRunner.IsRunning(meeting)) throw new InvalidOperationException("wait until the transcript is finished");
                 if (p["cloudToo"]?.GetValue<bool>() == true)  // the cloud copy first: if that fails, nothing is gone
+                {
+                    CloudJobs.Ready();
                     await TranscriptionRunner.Output("anymeet", "forget", meeting);
+                }
                 if (Directory.Exists(meeting))  // forget removes a folder that held only cloud records
                     // Recoverable from the Recycle Bin.
                     Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(meeting,
@@ -138,6 +141,7 @@ sealed class WebWindow : Form
                 File.WriteAllText(Path.Combine(MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found"), "job.stop"), "");
                 return null;
             case "checkCloud":
+                CloudJobs.Ready();
                 return JsonDocument.Parse(await TranscriptionRunner.Output("anymeet", "check")).RootElement.Clone();
             case "setCloud":
                 if (Str("url").Trim().Length > 0 && !(Uri.TryCreate(Str("url").Trim(), UriKind.Absolute, out var server) && server.Scheme == "https"))
