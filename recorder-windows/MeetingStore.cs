@@ -50,12 +50,8 @@ static class MeetingStore
         if ((string?)meeting["status"] == "failed" && File.Exists(log))
             meeting["error"] = File.ReadLines(log).LastOrDefault(l => l.Trim().Length > 0) ?? "";  // the transcriber's own last words
         // What a running transcription is doing and how far it is (the transcriber's progress.py).
-        var progress = Path.Combine(folder, "progress.json");
-        if ((string?)meeting["status"] == "transcribing" && File.Exists(progress))
-        {
-            try { meeting["progress"] = JsonDocument.Parse(File.ReadAllText(progress)).RootElement.Clone(); }
-            catch (Exception e) when (e is IOException or JsonException) { }  // being replaced right now: next poll
-        }
+        if ((string?)meeting["status"] == "transcribing")
+            meeting["progress"] = ReadJson(folder, "progress.json");  // null while being replaced: next poll
         return meeting;
     }
 
@@ -85,13 +81,20 @@ static class MeetingStore
         };
     }
 
-    /// <summary>A JSON file in the folder, or null when it's missing or being replaced right now.</summary>
+    /// <summary>
+    /// A JSON file in the folder, or null when it's missing or being replaced right now. Opened so the
+    /// transcriber can still replace or delete it meanwhile (os.replace fails on a file open without that).
+    /// </summary>
     static JsonElement? ReadJson(string folder, string name)
     {
         var path = Path.Combine(folder, name);
         if (!File.Exists(path)) return null;
-        try { return JsonDocument.Parse(File.ReadAllText(path)).RootElement.Clone(); }
-        catch (Exception e) when (e is IOException or JsonException) { return null; }
+        try
+        {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonDocument.Parse(file).RootElement.Clone();
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return null; }
     }
 
     static JsonElement? ReadTranscript(string folder) => ReadJson(folder, "transcript.json");

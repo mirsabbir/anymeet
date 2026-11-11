@@ -120,7 +120,10 @@ class Jobs:
     def _write(self, folder: Path) -> None:
         with self.lock:
             if folder in self.held:  # under the lock: a write racing end() must not bring the file back
-                self._dump(folder, self.held[folder])
+                try:
+                    self._dump(folder, self.held[folder])
+                except OSError:  # a reader has it open (Windows) or the disk is full: the next tick tries again
+                    pass
 
     @staticmethod
     def _dump(folder: Path, data: dict) -> None:

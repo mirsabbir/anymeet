@@ -117,6 +117,10 @@ enum SelfTest {
             await speakersRecordingTest(app, report: report, check, wait)
             finish(checks, report)
         }
+        if let i = CommandLine.arguments.firstIndex(of: "--cloud-test"), i + 1 < CommandLine.arguments.count {
+            await cloudTest(copying: URL(filePath: CommandLine.arguments[i + 1]), shots: report.deletingLastPathComponent(), check, wait)
+            finish(checks, report)
+        }
 
         let savedMode = UserDefaults.standard.string(forKey: "transcribeMode")  // nil = never set; restore exactly
         Preferences.transcribeMode = "after"  // steps 2-4 cover transcribing after the meeting
@@ -395,6 +399,98 @@ enum SelfTest {
         check("rename: every segment of that speaker renamed in transcript.json", names == ["Rahim Uddin", "Speaker 2", "Rahim Uddin"], names.joined(separator: ", "))
         check("rename: transcript.md rewritten", markdown.contains("**[00:00:06] Rahim Uddin:** again"), String(markdown.prefix(160)))
         window.close()
+    }
+
+    /// `--cloud-test <meeting folder>`: needs cloud backup set up. Copies the meeting under a
+    /// throwaway name, then on its page: Back up, Free up, Download recordings (byte-for-byte the
+    /// same), Delete here and in the cloud; and Settings → Test the connection. Saves a screenshot
+    /// of each step next to the report.
+    private static func cloudTest(copying source: URL, shots: URL, _ check: (String, Bool, String) -> Void,
+                                  _ wait: (Double, () -> Bool) async -> Bool) async {
+        guard Preferences.cloudReady else { return check("cloud: set up in Settings", false, "no server address or token") }
+        let id = "2000-01-01_0000"
+        let folder = Preferences.meetingsRoot.appending(path: id)
+        try? FileManager.default.removeItem(at: folder)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: source.path)) ?? [])
+            .filter { $0.hasPrefix("display-") || $0.hasSuffix(".m4a") || $0.hasPrefix("transcript.") }
+        for name in names { try? FileManager.default.copyItem(at: source.appending(path: name), to: folder.appending(path: name)) }
+        let recordings = names.filter { !$0.hasPrefix("transcript.") }
+        check("cloud: test meeting made", !recordings.isEmpty, names.joined(separator: ", "))
+
+        WebWindows.shared.showMeetings(id: id)
+        try? await Task.sleep(for: .seconds(3))
+        guard let (_, web) = WebWindows.shared.window("meetings") else { return check("cloud: Meetings window", false, "") }
+        func text(_ selector: String) async -> String {
+            (try? await web.evaluateJavaScript("document.querySelector(\(String(reflecting: selector)))?.innerText ?? ''")) as? String ?? ""
+        }
+        func click(_ label: String, in scope: String = "document") async -> Bool {
+            let js = "(() => { const b = [...\(scope).querySelectorAll('button')].find((b) => b.innerText.trim().startsWith(\(String(reflecting: label))) && !b.disabled); b?.click(); return !!b })()"
+            return (try? await web.evaluateJavaScript(js)) as? Bool ?? false
+        }
+        func until(_ seconds: Double, _ selector: String, contains words: String) async -> Bool {
+            let deadline = Date().addingTimeInterval(seconds)
+            while Date() < deadline {
+                if await text(selector).contains(words) { return true }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            return false
+        }
+        func shot(_ name: String) async { await WebWindows.shared.snapshot("meetings", to: shots.appending(path: "cloud-\(name).png").path) }
+
+        check("cloud: header says not backed up", await until(10, ".detail-head", contains: "Not backed up"), await text(".detail-head .meta"))
+        check("cloud: Back up clicked", await click("Back up"), "")
+        let progress = await until(60, ".banner.run", contains: "Backing up to the cloud")
+        await shot("1-backing-up")
+        check("cloud: progress banner while backing up", progress, await text(".banner.run"))
+        check("cloud: header says backed up and safe to remove", await until(20 * 60, ".detail-head", contains: "safe to remove"), await text(".detail-head .meta"))
+        await shot("2-backed-up")
+
+        check("cloud: Free up clicked", await click("Free up"), "")
+        let freed = await wait(120) { recordings.allSatisfy { !FileManager.default.fileExists(atPath: folder.appending(path: $0).path) } }
+        check("cloud: recordings deleted from this computer", freed, recordings.joined(separator: ", "))
+        check("cloud: Download recordings offered", await until(10, ".detail-head", contains: "Download recordings"), await text(".detail-head .actions"))
+        check("cloud: files listed as only in the cloud", await until(10, ".files", contains: "Only in the cloud"), await text(".files"))
+        let segments = (try? await web.evaluateJavaScript("document.querySelectorAll('.segment').length")) as? Int ?? 0
+        check("cloud: transcript still shown", segments > 0 || !names.contains("transcript.json"), "\(segments) segments")
+        await shot("3-freed")
+
+        check("cloud: Download recordings clicked", await click("Download recordings"), "")
+        let back = await wait(20 * 60) { recordings.allSatisfy { FileManager.default.fileExists(atPath: folder.appending(path: $0).path) } }
+        let same = recordings.allSatisfy { FileManager.default.contentsEqual(atPath: folder.appending(path: $0).path, andPath: source.appending(path: $0).path) }
+        check("cloud: recordings downloaded, byte for byte the same", back && same, recordings.joined(separator: ", "))
+        check("cloud: header says backed up again", await until(30, ".detail-head", contains: "safe to remove"), await text(".detail-head .meta"))
+        await shot("4-downloaded")
+
+        WebWindows.shared.showSettings(tab: "cloud")
+        try? await Task.sleep(for: .seconds(2))
+        if let (_, settings) = WebWindows.shared.window("settings") {
+            _ = try? await settings.evaluateJavaScript("[...document.querySelectorAll('button.link')].find((b) => b.innerText.includes('Test the connection'))?.click(); 1")
+            var note = ""
+            for _ in 0..<60 where !note.contains("Connected") {
+                try? await Task.sleep(for: .milliseconds(500))
+                note = (try? await settings.evaluateJavaScript("document.querySelector('.note')?.innerText ?? ''")) as? String ?? ""
+            }
+            check("cloud: Settings → Test the connection", note.contains("Connected ·"), note)
+            await WebWindows.shared.snapshot("settings", to: shots.appending(path: "cloud-5-settings.png").path)
+        }
+
+        WebWindows.shared.showMeetings(id: id)
+        try? await Task.sleep(for: .seconds(2))
+        check("cloud: Delete clicked", await click("Delete"), "")
+        let asks = await text(".confirm")
+        check("cloud: delete asks about here and the cloud", asks.contains("here and in the cloud"), asks)
+        check("cloud: delete confirmed", await click("Delete", in: "document.querySelector('.confirm')"), "")
+        check("cloud: meeting folder gone", await wait(60) { !FileManager.default.fileExists(atPath: folder.path) }, folder.path)
+        let listed = (try? await TranscriptionRunner.output(["anymeet", "check"])).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let left = (try? await TranscriptionRunner.output(["anymeet", "sync", Preferences.meetingsRoot.path])) != nil
+            && !FileManager.default.fileExists(atPath: folder.path)
+        check("cloud: deleted in the cloud too (no folder comes back on sync)", left, "\(listed ?? [:])")
+        // Out of the Trash as well: the downloaded copies are real bytes, unlike the clones.
+        let trash = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".Trash")
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: trash.path)) ?? [] where name.hasPrefix(id) {
+            try? FileManager.default.removeItem(at: trash.appending(path: name))
+        }
     }
 
     private static func finish(_ checks: [[String: Any]], _ report: URL) -> Never {
