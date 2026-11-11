@@ -1,12 +1,14 @@
 #!/bin/zsh
-# Builds "AnyMeet.app" into build/. VERSION sets the version (default 0.0.0-dev);
+# Builds "AnyMeet.app" into build.noindex/: the suffix keeps this dev copy out of
+# Spotlight and Apps, so only the installed AnyMeet shows there.
+# VERSION sets the version (default 0.0.0-dev);
 # UPDATE_REPOSITORY (owner/repo) turns on updates from that repo's GitHub Releases.
 set -euo pipefail
 cd "${0:A:h}"
 
 (cd ../ui && npm ci --silent && npm run build)
 swift build -c release
-APP="build/AnyMeet.app"
+APP="build.noindex/AnyMeet.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/ui"
 cp .build/release/AnyMeet "$APP/Contents/MacOS/AnyMeet"

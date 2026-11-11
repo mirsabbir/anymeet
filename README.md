@@ -136,7 +136,7 @@ Both can be edited from the app: Settings → Transcription and Settings → Glo
 
 ```bash
 cd transcriber && uv run pytest                       # transcriber: audio splitting, pipeline, CLI, live mode, speakers
-recorder-macos/build.sh && recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-test.json --fake-capture
+recorder-macos/build.sh && recorder-macos/build.noindex/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-test.json --fake-capture
 ```
 
 The macOS self-test drives the real app: it records (with `--fake-capture`, a spoken test clip instead of the screen), stops from the menu-bar item, runs the transcriber after the meeting and live (the transcript must appear while still recording), checks the menu-bar icon at every step, pastes into the API key field and copies to the clipboard, then writes a pass/fail report. Without `--fake-capture`, start it with `open -a AnyMeet --args --self-test <report.json>` so the real screen capture runs under AnyMeet's own permission. It also plays a track from the transcript inside the app, and stops the way the system's ⏹ in the menu bar does (that button stops only the screen video, so AnyMeet has to notice and stop the rest). Last, it checks the GPU/processor choice and the speakers switch in Settings, and renames a speaker on a meeting page by clicking it and typing, which must rewrite the transcript files.
@@ -144,13 +144,13 @@ The macOS self-test drives the real app: it records (with `--fake-capture`, a sp
 `--speakers-test` records a WAV of several voices as the system audio (`--fake-system`, 16 kHz mono) with "Tell speakers apart" on, transcribes it after the meeting and live, and checks that "Others" comes out as Speaker 1, Speaker 2…. It needs the speaker model downloaded:
 
 ```bash
-recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-speakers.json --fake-capture --speakers-test --fake-system voices.wav
+recorder-macos/build.noindex/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-speakers.json --fake-capture --speakers-test --fake-system voices.wav
 ```
 
 `--download-test <model>` checks a local model download through Settings instead: the card says it isn't downloaded, clicking it shows progress up to the end, and the transcriber finds every file. Give it an empty `HF_HOME` so it really downloads and leaves your model cache alone:
 
 ```bash
-HF_HOME=$(mktemp -d) recorder-macos/build/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-download.json --download-test local-whisper-english
+HF_HOME=$(mktemp -d) recorder-macos/build.noindex/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-download.json --download-test local-whisper-english
 ```
 
 GitHub Actions runs the transcriber tests and builds on every push.

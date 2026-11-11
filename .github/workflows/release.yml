@@ -26,7 +26,7 @@ jobs:
       - name: Make the DMG
         run: |
           mkdir dmg
-          cp -R "recorder-macos/build/AnyMeet.app" dmg/
+          cp -R "recorder-macos/build.noindex/AnyMeet.app" dmg/
           ln -s /Applications dmg/Applications
           hdiutil create -volname "AnyMeet" -srcfolder dmg -ov -format UDZO AnyMeet-macOS.dmg
           codesign -dv "dmg/AnyMeet.app" 2>&1 | grep -E "Identifier|Signature|Authority" || true
