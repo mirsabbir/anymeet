@@ -109,8 +109,45 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
         case "deleteMeeting":
             guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
             if TranscriptionRunner.shared.running.contains(folder.path) { throw BridgeError("wait until the transcript is finished") }
-            try FileManager.default.trashItem(at: folder, resultingItemURL: nil)  // recoverable from the Trash
+            if p["cloudToo"] as? Bool == true {  // the cloud copy first: if that fails, nothing is gone
+                _ = try await TranscriptionRunner.output(["anymeet", "forget", folder.path])
+            }
+            if FileManager.default.fileExists(atPath: folder.path) {  // forget removes a folder that held only cloud records
+                try FileManager.default.trashItem(at: folder, resultingItemURL: nil)  // recoverable from the Trash
+            }
             NotificationCenter.default.post(name: TranscriptionRunner.meetingsChanged, object: nil)
+        case "backup":
+            try CloudJobs.run(["backup"] + CloudJobs.idle(p["ids"] as? [String] ?? []).map(\.path))
+        case "freeUp":
+            try CloudJobs.run(["free"] + CloudJobs.idle(p["ids"] as? [String] ?? []).map(\.path))
+        case "restore":
+            guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
+            let files = p["files"] as? [String] ?? []
+            try CloudJobs.run(["restore", folder.path] + (files.isEmpty ? [] : ["--files"] + files))
+        case "summarize":
+            guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
+            try CloudJobs.run(["summarize", folder.path, "--language", Preferences.summaryLanguage])
+        case "stopJob":
+            guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
+            FileManager.default.createFile(atPath: folder.appending(path: "job.stop").path, contents: nil)
+        case "checkCloud":
+            let out = try await TranscriptionRunner.output(["anymeet", "check"])
+            return try JSONSerialization.jsonObject(with: out)
+        case "setCloud":
+            let url = (p["url"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            guard url.isEmpty || URL(string: url)?.scheme == "https" else { throw BridgeError("the server address must start with https://") }
+            try Preferences.setCloud(url: url, token: (p["token"] as? String ?? "").trimmingCharacters(in: .whitespaces))
+            CloudJobs.atLaunch()  // list what is already in the cloud
+        case "setAutoBackup":
+            Preferences.autoBackup = p["on"] as? Bool ?? false
+        case "setAnthropicKey":
+            try Preferences.setAnthropicKey(p["key"] as? String ?? "")
+        case "setAutoSummary":
+            Preferences.autoSummary = p["on"] as? Bool ?? false
+        case "setSummaryLanguage":
+            let language = p["language"] as? String ?? ""
+            guard ["auto", "en", "bn"].contains(language) else { throw BridgeError("unknown language \(language)") }
+            Preferences.summaryLanguage = language
         case "listMeetings":
             return await MeetingStore.list()
         case "getMeeting":
@@ -199,6 +236,12 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             "glossary": Preferences.glossary,
             "displays": displays,
             "microphone": AVCaptureDevice.default(for: .audio)?.localizedName ?? "",
+            "cloudUrl": Preferences.cloudURL,
+            "cloudTokenSet": Preferences.cloudTokenSet,
+            "autoBackup": Preferences.autoBackup,
+            "anthropicKeySet": Preferences.anthropicKeySet,
+            "autoSummary": Preferences.autoSummary,
+            "summaryLanguage": Preferences.summaryLanguage,
         ]
     }
 }

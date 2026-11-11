@@ -45,6 +45,7 @@ static class MeetingStore
             .Where(x => !string.IsNullOrEmpty(x.GetProperty("text").GetString()))
             .Select(x => $"[{Clock(x.GetProperty("start").GetDouble())}] {x.GetProperty("speaker").GetString()}: {x.GetProperty("text").GetString()}"));
         meeting["files"] = await Files(folder);
+        meeting["summary"] = ReadJson(folder, "summary.json");
         var log = Path.Combine(folder, "transcribe.log");
         if ((string?)meeting["status"] == "failed" && File.Exists(log))
             meeting["error"] = File.ReadLines(log).LastOrDefault(l => l.Trim().Length > 0) ?? "";  // the transcriber's own last words
@@ -68,6 +69,7 @@ static class MeetingStore
         var preview = segments?.Select(x => x.GetProperty("text").GetString()).FirstOrDefault(x => !string.IsNullOrEmpty(x)) ?? "";
         var started = DateTime.TryParseExact(id, "yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed : Directory.GetCreationTime(folder);
+        var summary = ReadJson(folder, "summary.json");
         return new()
         {
             ["id"] = id,
@@ -75,16 +77,24 @@ static class MeetingStore
             ["durationSec"] = MediaFiles(folder).Where(IsAudio).Select(f => Probe(f)?.TotalTime.TotalSeconds ?? 0).DefaultIfEmpty(0).Max(),
             ["status"] = status,
             ["preview"] = preview.Length > 140 ? preview[..140] : preview,
+            // The files here, the cloud copy, a background job and the AI summary's title (transcriber/cloud.py, job.py, summary.py).
+            ["local"] = Directory.GetFiles(folder).ToDictionary(f => Path.GetFileName(f), f => new FileInfo(f).Length),
+            ["cloud"] = ReadJson(folder, "cloud.json") is JsonElement c && c.TryGetProperty("files", out var files) ? files : null,
+            ["job"] = ReadJson(folder, "job.json"),
+            ["title"] = summary is JsonElement sj && sj.TryGetProperty("title", out var title) ? title.GetString() : null,
         };
     }
 
-    static JsonElement? ReadTranscript(string folder)
+    /// <summary>A JSON file in the folder, or null when it's missing or being replaced right now.</summary>
+    static JsonElement? ReadJson(string folder, string name)
     {
-        var path = Path.Combine(folder, "transcript.json");
+        var path = Path.Combine(folder, name);
         if (!File.Exists(path)) return null;
         try { return JsonDocument.Parse(File.ReadAllText(path)).RootElement.Clone(); }
-        catch (JsonException) { return null; }
+        catch (Exception e) when (e is IOException or JsonException) { return null; }
     }
+
+    static JsonElement? ReadTranscript(string folder) => ReadJson(folder, "transcript.json");
 
     static bool IsAudio(string path) => AudioExtensions.Contains(Path.GetExtension(path));
 

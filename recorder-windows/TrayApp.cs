@@ -32,6 +32,9 @@ sealed class TrayApp : ApplicationContext
 
     public bool IsIdle => state == State.Idle;
 
+    /// <summary>The folder being recorded into, or null.</summary>
+    public string? RecordingFolder => state == State.Idle ? null : folder;
+
     /// <summary>The Recording shape in ui/src/types.ts.</summary>
     public object Recording => new
     {
@@ -50,6 +53,7 @@ sealed class TrayApp : ApplicationContext
         ticker.Tick += (_, _) => Render();
         TranscriptionRunner.MeetingsChanged += () => { Render(); WebWindow.Emit("meetingsChanged"); };
         Render();
+        CloudJobs.AtLaunch();
     }
 
     async void Toggle()
@@ -120,6 +124,10 @@ sealed class TrayApp : ApplicationContext
             var meeting = folder!;
             var started = TranscriptionRunner.Start(meeting, completion: ok => TranscriptFinished(ok, meeting));
             lastMessage = started ? $"Transcribing {name}" : "⚠️ Couldn't start the transcriber (is uv installed?)";
+        }
+        else if (transcribe)
+        {
+            CloudJobs.AfterTranscript(folder!);  // transcription is off: nothing to wait for before the backup
         }
         Render();
     }

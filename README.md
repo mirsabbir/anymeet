@@ -7,6 +7,8 @@ AnyMeet is a bot-free meeting recorder for macOS and Windows. One click records 
 - **Your words, spelled right.** A personal glossary (names, products, jargon) keeps English terms in English letters.
 - **Swappable transcription.** Gemini 3.5 Transcribe by default, or free Whisper models that run on your own computer (one for Bangla, one for English). Providers plug in through a small adapter.
 - **Play it back in the app.** Click a time in the transcript to hear that moment from the speaker's own track; recordings play inside the app with the system's own decoders.
+- **Cloud backup, free disk.** Each meeting can be backed up to your own S3 bucket; then its recordings can leave this computer and be downloaded again when you need them, while the transcript stays.
+- **AI summary.** Claude writes what was decided, who does what, and the topics in order, from the transcript.
 
 | Folder | What's inside |
 |---|---|
@@ -117,11 +119,35 @@ On the GPU your processor stays mostly free for other work. The test clip's 4 vo
 - **macOS:** the Apple GPU (through Metal), the default.
 - **Windows:** NVIDIA cards only; the app finds them with `nvidia-smi`. Choosing the GPU installs PyTorch built for CUDA once (2.6 GB, needs a recent NVIDIA driver) and checks that the card works (`transcribe --device`). Other cards, and PCs without one, use the processor, which is also the default.
 
+## Cloud backup
+
+Settings → Cloud & AI. A meeting has two homes: this computer and the cloud, matched by its folder name. Once a meeting's files are in the cloud, the meeting page says **Backed up · safe to remove … from this computer**, and **Free up** deletes its video and audio here while the transcript stays. **Download recordings** brings them back; a meeting that is only in the cloud (deleted here, or recorded on another computer) is listed as **In the cloud**.
+
+- **Server:** an AnyMeet Cloud server: a small AWS stack (a Lambda that hands out presigned S3 URLs, and a private S3 bucket). The app sends its address and access token; it never holds AWS keys.
+- **Automatic:** with "Back up automatically" on, each meeting is backed up when its transcript is ready (or when recording stops, if transcription is off). Settings also backs up every meeting not in the cloud yet, and frees space for all backed-up meetings at once.
+- **Big files:** files go straight to S3 in 16 MiB parts, 4 at a time. Each part carries its MD5, so S3 refuses damaged bytes, and a file counts as backed up only when S3's checksum of the whole file equals the one computed here. A dropped connection is retried with backoff for up to 10 minutes; parts already sent stay, so a backup cut off by Stop, sleep, a crash or no network goes on where it stopped (also when the app next opens). Downloads fetch 8 ranges at a time and resume the same way.
+- **Free up** checks with the server first and deletes only recordings whose cloud copy matches the file here; anything changed since, or not in the cloud, is kept.
+- **Delete** on a backed-up meeting deletes it in both places (the cloud keeps old versions for 30 days).
+- **Command line:** `uv run anymeet backup|restore|free|forget <meeting-folder>`, `uv run anymeet sync ~/Meetings`, `uv run anymeet check`. A job's progress is in `<meeting>/job.json`, what the cloud holds in `<meeting>/cloud.json`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Here: recorded
+  Here --> Both: Back up (automatic after the transcript)
+  Both --> CloudOnly: Free up (transcript stays here)
+  CloudOnly --> Both: Download recordings
+  Both --> [*]: Delete (here and in the cloud)
+```
+
+## AI summary
+
+Settings → Cloud & AI → AI summary. With an Anthropic API key, **Summarize** on a meeting page sends the transcript to Claude Opus 5.5, which returns a title, an overview, decisions, action items with owners, topics with times (click one to play from there) and open questions. It is saved as `summary.json` in the meeting folder (and backed up with it). "Summarize automatically" does it once per meeting when the transcript is ready; summaries can be written in the meeting's own language, English or Bangla. An hour-long meeting costs about $0.20–0.50. From the command line: `uv run anymeet summarize <meeting-folder> [--language auto|en|bn]`.
+
 ## Settings
 
 Nothing personal lives in the code. Each user's settings folder holds:
 
-- `.env`: the API key, e.g. `GEMINI_API_KEY=…`, and the Hugging Face token for the speaker model, `HF_TOKEN=…`
+- `.env`: the API key, e.g. `GEMINI_API_KEY=…`, the Hugging Face token for the speaker model, `HF_TOKEN=…`, the cloud server, `ANYMEET_CLOUD_URL=…` and `ANYMEET_CLOUD_TOKEN=…`, and Claude's key, `ANTHROPIC_API_KEY=…`
 - `glossary.txt`: one term per line
 
 | OS | Folder |
@@ -130,12 +156,12 @@ Nothing personal lives in the code. Each user's settings folder holds:
 | Windows | `%APPDATA%\AnyMeet\` |
 | Linux (CLI only) | `~/.config/anymeet/` |
 
-Both can be edited from the app: Settings → Transcription and Settings → Glossary.
+All can be edited from the app: Settings → Transcription, Glossary, and Cloud & AI.
 
 ## Tests
 
 ```bash
-cd transcriber && uv run pytest                       # transcriber: audio splitting, pipeline, CLI, live mode, speakers
+cd transcriber && uv run pytest                       # transcriber: audio splitting, pipeline, CLI, live mode, speakers, cloud backup, summaries
 recorder-macos/build.sh && recorder-macos/build.noindex/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-test.json --fake-capture
 ```
 
@@ -152,6 +178,8 @@ recorder-macos/build.noindex/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp
 ```bash
 HF_HOME=$(mktemp -d) recorder-macos/build.noindex/AnyMeet.app/Contents/MacOS/AnyMeet --self-test /tmp/anymeet-download.json --download-test local-whisper-english
 ```
+
+`tests/test_cloud.py` runs the backup client against an in-process fake of the server and S3: a crash mid-upload resumes without sending parts again, dropped connections and server errors, damaged parts, a long outage, Stop, freeing space, a cut and a killed download, and sync.
 
 GitHub Actions runs the transcriber tests and builds on every push.
 

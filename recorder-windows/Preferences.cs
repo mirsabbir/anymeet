@@ -36,6 +36,8 @@ static class Preferences
     }
     const string KeyName = "GEMINI_API_KEY";  // both Gemini models' key
     const string HfTokenName = "HF_TOKEN";  // Hugging Face, read by the transcriber to download the speaker model
+    // Read by `anymeet` (transcriber/commands.py): the AnyMeet Cloud server, its token, and Claude's key.
+    const string CloudUrlName = "ANYMEET_CLOUD_URL", CloudTokenName = "ANYMEET_CLOUD_TOKEN", AnthropicKeyName = "ANTHROPIC_API_KEY";
 
     public static readonly string[] AvailableTranscribers = { "gemini-3.5-transcribe", "gemini-3.8-flash", "local-whisper-bangla", "local-whisper-english" };
 
@@ -49,7 +51,8 @@ static class Preferences
     };
 
     record Stored(bool AutoTranscribe = true, string Transcriber = "gemini-3.5-transcribe", string? TranscribeMode = null,
-                  bool Speakers = false, string Processor = "cpu");
+                  bool Speakers = false, string Processor = "cpu", bool AutoBackup = false, bool AutoSummary = false,
+                  string SummaryLanguage = "auto");
 
     static readonly string SettingsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AnyMeet", "settings.json");
 
@@ -76,6 +79,27 @@ static class Preferences
     {
         get => Load().Transcriber;
         set => Save(Load() with { Transcriber = value });
+    }
+
+    /// <summary>Back up each meeting once its transcript is ready.</summary>
+    public static bool AutoBackup
+    {
+        get => Load().AutoBackup;
+        set => Save(Load() with { AutoBackup = value });
+    }
+
+    /// <summary>Summarize each meeting once its transcript is ready, if it has no summary yet.</summary>
+    public static bool AutoSummary
+    {
+        get => Load().AutoSummary;
+        set => Save(Load() with { AutoSummary = value });
+    }
+
+    /// <summary>"auto" (the meeting's own language), "en" or "bn".</summary>
+    public static string SummaryLanguage
+    {
+        get => Load().SummaryLanguage;
+        set => Save(Load() with { SummaryLanguage = value });
     }
 
     /// <summary>Split "Others" into Speaker 1, Speaker 2… (`transcribe --speakers`).</summary>
@@ -167,6 +191,19 @@ static class Preferences
     public static bool HfTokenSet => IsSet(HfTokenName);
     public static void SetApiKey(string key) => SetSecret(KeyName, key);
     public static void SetHfToken(string token) => SetSecret(HfTokenName, token);
+    public static bool CloudTokenSet => IsSet(CloudTokenName);
+    public static bool AnthropicKeySet => IsSet(AnthropicKeyName);
+    public static void SetAnthropicKey(string key) => SetSecret(AnthropicKeyName, key);
+    /// <summary>The server address isn't secret, so the UI shows it.</summary>
+    public static string CloudUrl => EnvLines().FirstOrDefault(l => l.StartsWith(CloudUrlName + "="))?[(CloudUrlName.Length + 1)..] ?? "";
+    public static bool CloudReady => CloudUrl.Length > 0 && CloudTokenSet;
+
+    /// <summary>An empty token keeps the saved one.</summary>
+    public static void SetCloud(string url, string token)
+    {
+        SetSecret(CloudUrlName, url);
+        if (token.Length > 0) SetSecret(CloudTokenName, token);
+    }
 
     static void SetSecret(string name, string value)
     {

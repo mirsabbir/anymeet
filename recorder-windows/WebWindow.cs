@@ -89,6 +89,7 @@ sealed class WebWindow : Form
     static async Task<object?> Dispatch(string method, JsonObject p)
     {
         string Str(string key) => p[key]?.GetValue<string>() ?? "";
+        IEnumerable<string> Ids() => (p["ids"] as JsonArray ?? new()).Select(i => i?.GetValue<string>() ?? "");
         switch (method)
         {
             case "getRecording":
@@ -110,10 +111,51 @@ sealed class WebWindow : Form
             case "deleteMeeting":
                 var meeting = MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found");
                 if (TranscriptionRunner.IsRunning(meeting)) throw new InvalidOperationException("wait until the transcript is finished");
-                // Recoverable from the Recycle Bin.
-                Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(meeting,
-                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                if (p["cloudToo"]?.GetValue<bool>() == true)  // the cloud copy first: if that fails, nothing is gone
+                    await TranscriptionRunner.Output("anymeet", "forget", meeting);
+                if (Directory.Exists(meeting))  // forget removes a folder that held only cloud records
+                    // Recoverable from the Recycle Bin.
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(meeting,
+                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
                 TranscriptionRunner.RaiseMeetingsChanged();
+                return null;
+            case "backup":
+                CloudJobs.Run(["backup", .. CloudJobs.Idle(Ids())]);
+                return null;
+            case "freeUp":
+                CloudJobs.Run(["free", .. CloudJobs.Idle(Ids())]);
+                return null;
+            case "restore":
+                var restored = MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found");
+                var files = (p["files"] as JsonArray ?? new()).Select(f => f?.GetValue<string>() ?? "").Where(f => f.Length > 0).ToArray();
+                CloudJobs.Run(["restore", restored, .. files.Length > 0 ? ["--files", .. files] : Array.Empty<string>()]);
+                return null;
+            case "summarize":
+                CloudJobs.Run("summarize", MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found"),
+                              "--language", Preferences.SummaryLanguage);
+                return null;
+            case "stopJob":
+                File.WriteAllText(Path.Combine(MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found"), "job.stop"), "");
+                return null;
+            case "checkCloud":
+                return JsonDocument.Parse(await TranscriptionRunner.Output("anymeet", "check")).RootElement.Clone();
+            case "setCloud":
+                if (Str("url").Trim().Length > 0 && !(Uri.TryCreate(Str("url").Trim(), UriKind.Absolute, out var server) && server.Scheme == "https"))
+                    throw new InvalidOperationException("the server address must start with https://");
+                Preferences.SetCloud(Str("url").Trim(), Str("token").Trim());
+                CloudJobs.AtLaunch();  // list what is already in the cloud
+                return null;
+            case "setAutoBackup":
+                Preferences.AutoBackup = p["on"]?.GetValue<bool>() ?? false;
+                return null;
+            case "setAnthropicKey":
+                Preferences.SetAnthropicKey(Str("key"));
+                return null;
+            case "setAutoSummary":
+                Preferences.AutoSummary = p["on"]?.GetValue<bool>() ?? false;
+                return null;
+            case "setSummaryLanguage":
+                Preferences.SummaryLanguage = Str("language") is "auto" or "en" or "bn" ? Str("language") : throw new InvalidOperationException("unknown language");
                 return null;
             case "listMeetings":
                 return await Task.Run(MeetingStore.List);
@@ -207,6 +249,12 @@ sealed class WebWindow : Form
             glossary = Preferences.Glossary,
             displays = Screen.AllScreens.Select(s => $"{s.DeviceName.TrimStart('\\', '.')} · {s.Bounds.Width}×{s.Bounds.Height}").ToList(),
             microphone,
+            cloudUrl = Preferences.CloudUrl,
+            cloudTokenSet = Preferences.CloudTokenSet,
+            autoBackup = Preferences.AutoBackup,
+            anthropicKeySet = Preferences.AnthropicKeySet,
+            autoSummary = Preferences.AutoSummary,
+            summaryLanguage = Preferences.SummaryLanguage,
         };
     }
 }

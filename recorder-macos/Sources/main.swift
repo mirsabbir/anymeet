@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let arguments = CommandLine.arguments
         if let i = arguments.firstIndex(of: "--self-test"), i + 1 < arguments.count {
             Task { @MainActor in await SelfTest.run(self, report: URL(filePath: arguments[i + 1])) }
+        } else {
+            CloudJobs.atLaunch()
         }
         statusItem.button?.target = self
         statusItem.button?.action = #selector(clicked)
@@ -145,6 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if transcribe && Preferences.transcribeMode == "after" {
             let started = TranscriptionRunner.shared.start(folder) { [weak self] ok in self?.transcriptFinished(ok, folder) }
             lastMessage = started ? "Transcribing \(folder.lastPathComponent)" : "⚠️ Can't transcribe: \(TranscriptionRunner.shared.lastError)"
+        } else if transcribe {
+            CloudJobs.afterTranscript(folder)  // transcription is off: nothing to wait for before the backup
         }
         render()
     }
