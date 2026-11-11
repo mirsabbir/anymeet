@@ -1,7 +1,7 @@
 r"""anymeet backup <folder>...             send what is new or changed to the cloud
 anymeet restore <folder> [--files P…]   download from the cloud what is missing here (or the files named)
 anymeet free <folder>...               delete the recordings here that are safely in the cloud
-anymeet forget <folder>                delete the meeting's cloud copy; this computer's copy stays
+anymeet forget <folder>...             delete the meetings' cloud copies; this computer's copies stay
 anymeet sync <meetings folder> [--resume]  match every meeting to the cloud; --resume then finishes
                                          backups and downloads that were cut off
 anymeet check                          test the server address and token
@@ -44,7 +44,7 @@ def _parser() -> argparse.ArgumentParser:
     restore.add_argument("folder", type=Path)
     restore.add_argument("--files", nargs="+", default=[], help="paths inside the meeting folder")
     sub.add_parser("free").add_argument("folders", **many)
-    sub.add_parser("forget").add_argument("folder", type=Path)
+    sub.add_parser("forget").add_argument("folders", **many)
     sync = sub.add_parser("sync")
     sync.add_argument("root", type=Path)
     sync.add_argument("--resume", action="store_true")
@@ -127,7 +127,7 @@ def _forget(args) -> int:
         if cloud.forget(api, folder):
             emptied.append(folder)
         print(f"{folder.name}: deleted from the cloud", flush=True)
-    failed = _each("forget", [args.folder], work)
+    failed = _each("forget", args.folders, work)
     for folder in emptied:  # it held only the cloud's records: the meeting is gone
         shutil.rmtree(folder, ignore_errors=True)
     return failed

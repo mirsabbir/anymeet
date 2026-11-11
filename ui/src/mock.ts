@@ -63,7 +63,12 @@ const freed: Meeting = {
   files: [], local: { 'transcript.json': 60_000, 'transcript.md': 40_000 }, segments: cut.segments.slice(0, 2), durationSec: 1620,
   cloud: { 'display-1.mp4': { size: 506_895_548, etag: 'e-31' }, 'mic.m4a': { size: 13_716_678, etag: 'f-1' }, 'transcript.json': { size: 60_000, etag: 'g-1' } },
 }
-const meetings = [cut, freed, fresh, road]
+// Deleted here earlier (or recorded on another computer): only in the cloud.
+const away: Meeting = {
+  ...fresh, id: '2026-09-30_1100', folder: '~/Meetings/2026-09-30_1100', startedAt: '2026-09-30T11:00:00', durationSec: 0, files: [], local: {},
+  cloud: { 'display-1.mp4': { size: 1_851_113_576, etag: 'h-111' }, 'mic.m4a': { size: 5_113_267, etag: 'i-1' }, 'transcript.json': { size: 22_841, etag: 'j-1' } },
+}
+const meetings = [cut, freed, fresh, road, away]
 cut.local = { 'display-1.mp4': 6_367_871_608, 'mic.m4a': 52_476_457, 'system.m4a': 49_211_218, 'transcript.json': 162_987 }
 
 const emit = (e: string) => (window as unknown as { __hostEvent: (e: string) => void }).__hostEvent(e)
@@ -202,6 +207,15 @@ export async function mockHost(method: keyof HostApi, params: unknown): Promise<
     case 'restore': mockJob(meetings.find((m) => m.id === p.id)!, 'restore'); return
     case 'summarize': mockJob(meetings.find((m) => m.id === p.id)!, 'summary'); return
     case 'checkCloud': return { meetings: 3, bytes: 793_000_000 }
+    case 'forgetCloud':
+      for (const id of p.ids as string[]) {
+        const m = meetings.find((m) => m.id === id)!
+        m.cloud = undefined
+        if (Object.keys(m.local).length === 0) meetings.splice(meetings.indexOf(m), 1)
+      }
+      setTimeout(() => emit('meetingsChanged'), 300)
+      return
+    case 'syncCloud': setTimeout(() => emit('meetingsChanged'), 300); return
     case 'setCloud': settings.cloudUrl = p.url as string; settings.cloudTokenSet ||= Boolean(p.token); return
     case 'setAutoBackup': settings.autoBackup = Boolean(p.on); return
     case 'setAnthropicKey': settings.anthropicKeySet = Boolean(p.key); return

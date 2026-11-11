@@ -253,3 +253,12 @@ details.summary .at { flex-shrink: 0; display: inline-flex; align-items: center;
 details.summary .at .icon { width: 10px; height: 10px; fill: currentColor; opacity: .4; }
 details.summary .at:hover { color: var(--accent); }
 .summary-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.cloud-tools { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.cloud-tools input { vertical-align: middle; margin-right: 4px; }
+.cloud-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cloud-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.cloud-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cloud-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cloud-table td.ok { color: var(--ok); }
+.cloud-table a { color: var(--ink); font-weight: 600; text-decoration: none; }
+.cloud-table a:hover { color: var(--accent); }

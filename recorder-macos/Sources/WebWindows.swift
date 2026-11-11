@@ -121,6 +121,10 @@ final class WebWindows: NSObject, WKScriptMessageHandlerWithReply, NSWindowDeleg
             try CloudJobs.run(["backup"] + CloudJobs.idle(p["ids"] as? [String] ?? []).map(\.path))
         case "freeUp":
             try CloudJobs.run(["free"] + CloudJobs.idle(p["ids"] as? [String] ?? []).map(\.path))
+        case "forgetCloud":
+            try CloudJobs.run(["forget"] + CloudJobs.idle(p["ids"] as? [String] ?? []).map(\.path))
+        case "syncCloud":
+            try CloudJobs.run(["sync", Preferences.meetingsRoot.path])
         case "restore":
             guard let folder = MeetingStore.folder(p["id"] as? String ?? "") else { throw BridgeError("meeting not found") }
             let files = p["files"] as? [String] ?? []

@@ -128,6 +128,12 @@ sealed class WebWindow : Form
             case "freeUp":
                 CloudJobs.Run(["free", .. CloudJobs.Idle(Ids())]);
                 return null;
+            case "forgetCloud":
+                CloudJobs.Run(["forget", .. CloudJobs.Idle(Ids())]);
+                return null;
+            case "syncCloud":
+                CloudJobs.Run("sync", Preferences.MeetingsRoot);
+                return null;
             case "restore":
                 var restored = MeetingStore.Folder(Str("id")) ?? throw new InvalidOperationException("meeting not found");
                 var files = (p["files"] as JsonArray ?? new()).Select(f => f?.GetValue<string>() ?? "").Where(f => f.Length > 0).ToArray();

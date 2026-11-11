@@ -262,7 +262,8 @@ def test_stop_ends_the_upload_within_moments(fake, meeting):
     with pytest.raises(cloud.Stopped):
         backup(fake, meeting)
     assert time.monotonic() - started < 3
-    assert cloud.load(meeting)["uploads"]
+    state = cloud.load(meeting)  # what was sent is kept: a finished file, or an upload to resume
+    assert state["files"] or state["uploads"]
 
 
 def test_the_upload_is_restarted_when_the_server_dropped_it(fake, meeting):
@@ -483,3 +484,17 @@ def test_stop_ends_a_part_in_flight_at_once(fake, meeting, monkeypatch):
     with pytest.raises(cloud.Stopped):
         backup(fake, meeting)
     assert time.monotonic() - started < 3 and sum(sent) < 200 * 1024
+
+
+def test_forget_several_keeps_what_is_here_and_drops_cloud_only_meetings(fake, meeting, tmp_path, monkeypatch):
+    from argparse import Namespace
+    from transcriber import commands
+    backup(fake, meeting)
+    fake.objects["2026-10-01_0900/display-1.mp4"] = {"data": b"v" * 10, "etag": "abc-1", "partSize": cloud.PART}
+    cloud.sync(api_for(fake), tmp_path)
+    stub = tmp_path / "2026-10-01_0900"
+    monkeypatch.setattr(commands, "_api", lambda jobs=None: api_for(fake, jobs))
+    assert commands._forget(Namespace(folders=[meeting, stub])) == 0
+    assert fake.objects == {}
+    assert not stub.exists()  # it was only in the cloud: gone
+    assert (meeting / "display-1.mp4").exists() and cloud.load(meeting)["files"] == {}  # back to "not backed up"

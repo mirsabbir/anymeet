@@ -128,7 +128,8 @@ Settings → Cloud & AI. A meeting has two homes: this computer and the cloud, m
 - **Big files:** files go straight to S3 in 16 MiB parts, 4 at a time. Each part carries its MD5, so S3 refuses damaged bytes, and a file counts as backed up only when S3's checksum of the whole file equals the one computed here. A dropped connection is retried with backoff for up to 10 minutes; parts already sent stay, so a backup cut off by Stop, sleep, a crash or no network goes on where it stopped (also when the app next opens). Downloads fetch 8 ranges at a time and resume the same way.
 - **Free up** checks with the server first and deletes only recordings whose cloud copy matches the file here; anything changed since, or not in the cloud, is kept.
 - **Delete** on a backed-up meeting deletes it in both places (the cloud keeps old versions for 30 days).
-- **Command line:** `uv run anymeet backup|restore|free|forget <meeting-folder>`, `uv run anymeet sync ~/Meetings`, `uv run anymeet check`. A job's progress is in `<meeting>/job.json`, what the cloud holds in `<meeting>/cloud.json`.
+- **In the cloud** (Settings → Cloud & AI) lists every meeting in the cloud with its size and where it is (only in the cloud, or here too), the total and a rough monthly cost. Tick meetings to delete their cloud copies at once; copies on this computer stay, and it warns first when a recording exists only in the cloud.
+- **Command line:** `uv run anymeet backup|restore|free|forget <meeting-folder>…`, `uv run anymeet sync ~/Meetings`, `uv run anymeet check`. A job's progress is in `<meeting>/job.json`, what the cloud holds in `<meeting>/cloud.json`.
 
 ```mermaid
 stateDiagram-v2

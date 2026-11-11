@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { call, on } from './bridge'
-import { cloudView, needsBackup } from './cloud'
-import { bytes } from './format'
+import { cloudView, JOB_TEXT, needsBackup } from './cloud'
+import { bytes, dateTime } from './format'
 import { Icon } from './icons'
 import type { MeetingSummary, Settings, SummaryLanguage } from './types'
 
@@ -99,6 +99,82 @@ function CloudBackup({ s, reload }: { s: Settings; reload: () => void }) {
           </button>
         </div>
       </div>
+      {ready && <CloudStorage meetings={meetings} />}
+    </>
+  )
+}
+
+const WHERE: Record<string, string> = {
+  cloudOnly: 'Only in the cloud', recordings: 'Recordings only in the cloud', saved: 'Here and in the cloud', partial: 'Partly in the cloud',
+}
+
+/** Everything in the cloud, with sizes; delete cloud copies in bulk. Copies here stay. */
+function CloudStorage({ meetings }: { meetings: MeetingSummary[] }) {
+  const [onlyCloud, setOnlyCloud] = useState(false)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState('')
+  const rows = meetings.filter((m) => Object.keys(m.cloud ?? {}).length > 0).map((m) => {
+    const v = cloudView(m)
+    const size = Object.values(m.cloud!).reduce((sum, f) => sum + f.size, 0)
+    const nowhereElse = Object.entries(m.cloud!).filter(([name]) => m.local[name] === undefined).reduce((sum, [, f]) => sum + f.size, 0)
+    return { m, v, size, nowhereElse, where: v.state === 'cloudOnly' ? 'cloudOnly' : v.missing.length ? 'recordings' : v.state }
+  })
+  const shown = onlyCloud ? rows.filter((r) => r.where === 'cloudOnly' || r.where === 'recordings') : rows
+  const total = rows.reduce((sum, r) => sum + r.size, 0)
+  const chosen = rows.filter((r) => picked.has(r.m.id))
+  const lost = chosen.filter((r) => r.nowhereElse > 0)
+  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const forget = () => {
+    setConfirming(false)
+    call('forgetCloud', { ids: chosen.map((r) => r.m.id) }).then(() => setPicked(new Set()), (e: Error) => setError(e.message))
+  }
+
+  return (
+    <>
+      <h2>In the cloud</h2>
+      <p className="small muted">
+        {rows.length} meeting{rows.length === 1 ? '' : 's'} · {bytes(total)} · about ${(total / 1e9 * 0.025).toFixed(2)} a month at most, less once recordings are a month old.
+        {' '}<button className="link" onClick={() => call('syncCloud')}>Refresh</button>
+      </p>
+      <div className="cloud-tools">
+        <label className="small"><input type="checkbox" checked={onlyCloud} onChange={(e) => setOnlyCloud(e.target.checked)} /> Only what isn’t on this computer</label>
+        <span style={{ flex: 1 }} />
+        {confirming ? null : (
+          <button className="btn" disabled={!chosen.length} onClick={() => { setError(''); setConfirming(true) }}>
+            <Icon name="trash" />Delete from the cloud{chosen.length ? ` (${chosen.length})` : ''}
+          </button>
+        )}
+      </div>
+      {confirming && (
+        <div className={`banner ${lost.length ? 'warn' : ''}`} role="alertdialog" aria-label="Confirm delete from the cloud">
+          <span style={{ flex: 1 }}>
+            Delete {chosen.length} meeting{chosen.length === 1 ? '' : 's'} ({bytes(chosen.reduce((s, r) => s + r.size, 0))}) from the cloud? Copies on this computer stay.
+            {lost.length > 0 && <><br /><strong>{bytes(lost.reduce((s, r) => s + r.nowhereElse, 0))} of it isn’t on this computer</strong> ({lost.length} meeting{lost.length === 1 ? '' : 's'}): it will be gone for good.</>}
+          </span>
+          <button className="btn danger" onClick={forget}>Delete from the cloud</button>
+          <button className="btn" onClick={() => setConfirming(false)}>Cancel</button>
+        </div>
+      )}
+      {error && <div className="note bad">{error}</div>}
+      {shown.length === 0 ? <p className="muted small">{onlyCloud ? 'Everything in the cloud is also on this computer.' : 'Nothing in the cloud yet.'}</p> : (
+        <table className="cloud-table">
+          <thead><tr><th aria-label="Choose" /><th>Meeting</th><th>Size</th><th>Where</th></tr></thead>
+          <tbody>
+            {shown.map(({ m, v, size, where }) => (
+              <tr key={m.id}>
+                <td><input type="checkbox" aria-label={`Choose ${m.id}`} checked={picked.has(m.id)} disabled={!!v.job} onChange={() => toggle(m.id)} /></td>
+                <td>
+                  <a href={`#/meetings/${m.id}`}>{dateTime(m.startedAt)}</a>
+                  <div className="small muted">{v.job ? JOB_TEXT[v.job.kind][0] : m.title || m.preview}</div>
+                </td>
+                <td className="num">{bytes(size)}</td>
+                <td className={where === 'saved' ? 'ok' : ''}>{WHERE[where]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </>
   )
 }

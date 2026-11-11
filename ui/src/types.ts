@@ -179,6 +179,8 @@ export interface HostApi {
   backup(p: { ids: string[] }): void // sends what is new or changed, one meeting after another
   restore(p: { id: string; files?: string[] }): void // downloads the files named, or everything missing here
   freeUp(p: { ids: string[] }): void // deletes the recordings here that are safely in the cloud
+  forgetCloud(p: { ids: string[] }): void // deletes the cloud copies; copies here stay, and a meeting only in the cloud goes
+  syncCloud(): void // reads again what the cloud holds (also done when the app opens)
   stopJob(p: { id: string }): void
   summarize(p: { id: string }): void
   checkCloud(): { meetings: number; bytes: number } // rejects with the reason when the server can't be reached

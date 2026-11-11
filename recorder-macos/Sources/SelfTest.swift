@@ -472,6 +472,8 @@ enum SelfTest {
                 note = (try? await settings.evaluateJavaScript("document.querySelector('.note')?.innerText ?? ''")) as? String ?? ""
             }
             check("cloud: Settings → Test the connection", note.contains("Connected ·"), note)
+            let table = (try? await settings.evaluateJavaScript("document.querySelector('.cloud-table')?.innerText ?? ''")) as? String ?? ""
+            check("cloud: Settings lists it in the cloud, also here", table.contains("1 Jan 2000") && table.contains("Here and in the cloud"), table)
             await WebWindows.shared.snapshot("settings", to: shots.appending(path: "cloud-5-settings.png").path)
         }
 
